@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "Khaos Docs",
+	"Description": "Surfaces plain markdown files from any plugin's Content/Docs folder as Content Browser entries, with an in-editor document editor and a project-wide table of contents.",
+	"Category": "Khaos",
+	"CreatedBy": "Khaos Games",
+	"CreatedByURL": "https://github.com/KhaosGames",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "https://github.com/KhaosGames/KhaosDocs/issues",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "KhaosDocsEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ContentBrowserFileDataSource",
+			"Enabled": true
+		}
+	]
+}
