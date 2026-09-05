@@ -6,7 +6,11 @@ Put a `.md` anywhere under a `Content` folder and it appears in the Content Brow
 on disk. There is nothing to register. The files stay markdown, so they diff in git and open in any
 editor.
 
-The project's `Content` and every project plugin's `Content` are scanned. Engine content is not.
+The documentation window additionally picks up a `Docs` folder beside the `.uplugin` and any
+markdown at the plugin root, such as `README.md`. Those cannot go in the Content Browser — a mount
+must be a directory inside a content root — but they open in the same editor.
+
+The project and its own plugins are scanned. Engine content is not.
 
 ## What it adds
 

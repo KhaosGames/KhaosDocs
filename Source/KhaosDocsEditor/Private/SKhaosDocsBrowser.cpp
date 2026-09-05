@@ -169,10 +169,11 @@ void SKhaosDocsBrowser::RescanDocuments()
 			Doc.FilePath = File;
 			Doc.Title = KhaosDocs::GetDocumentTitle(File);
 
-			// Documents can live anywhere under the root, so keep the containing folder to tell
-			// two same-named files apart in the tree.
+			// Documents can live anywhere under the owner, so keep the containing folder to tell
+			// two same-named files apart. Relative to the base folder rather than to Content, so
+			// that "Content/UI" and "Docs" both read sensibly and a root-level README shows none.
 			FString RelativeDir = FPaths::GetPath(File);
-			if (FPaths::MakePathRelativeTo(RelativeDir, *(Root.DiskPath / TEXT(""))))
+			if (FPaths::MakePathRelativeTo(RelativeDir, *(Root.BaseDir / TEXT(""))))
 			{
 				Doc.RelativeDir = MoveTemp(RelativeDir);
 			}

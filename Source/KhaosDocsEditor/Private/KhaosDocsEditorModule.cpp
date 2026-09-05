@@ -100,28 +100,65 @@ void KhaosDocs::FindDocRoots(TArray<FDocRoot>& OutRoots)
 			continue;
 		}
 
-		const FString DiskPath = MakeRootDiskPath(FPackageName::LongPackageNameToFilename(RootPath));
-		if (!FPaths::DirectoryExists(DiskPath))
+		const FString VirtualPath = MakeRootVirtualPath(RootPath);
+		const bool bIsProject = VirtualPath.Equals(TEXT("/Game"), ESearchCase::IgnoreCase);
+
+		FString BaseDir;
+		if (bIsProject)
+		{
+			BaseDir = FPaths::ProjectDir();
+		}
+		else if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(VirtualPath.RightChop(1)))
+		{
+			BaseDir = Plugin->GetBaseDir();
+		}
+		else
 		{
 			continue;
 		}
 
-		const FString VirtualPath = MakeRootVirtualPath(RootPath);
-
 		FDocRoot& Root = OutRoots.AddDefaulted_GetRef();
 		// "/Game" is the project itself; show its real name rather than the mount alias.
-		Root.Owner = VirtualPath.Equals(TEXT("/Game"), ESearchCase::IgnoreCase)
-			? FApp::GetProjectName()
-			: VirtualPath.RightChop(1);
+		Root.Owner = bIsProject ? FApp::GetProjectName() : VirtualPath.RightChop(1);
 		Root.VirtualPath = VirtualPath;
-		Root.DiskPath = DiskPath;
+		Root.DiskPath = MakeRootDiskPath(FPackageName::LongPackageNameToFilename(RootPath));
+		Root.BaseDir = MakeRootDiskPath(BaseDir);
 	}
 }
 
 void KhaosDocs::FindDocsInRoot(const FDocRoot& InRoot, TArray<FString>& OutFiles)
 {
 	const FString Wildcard = FString::Printf(TEXT("*.%s"), DocsFileExtension);
-	IFileManager::Get().FindFilesRecursive(OutFiles, *InRoot.DiskPath, *Wildcard, /*Files*/ true, /*Directories*/ false, /*bClearFileNames*/ false);
+	IFileManager& FileManager = IFileManager::Get();
+
+	TArray<FString> Found;
+
+	// Everything under Content. This is the set the Content Browser also shows.
+	FileManager.FindFilesRecursive(Found, *InRoot.DiskPath, *Wildcard, /*Files*/ true, /*Directories*/ false);
+
+	// A Docs folder beside the .uplugin, for documentation that is not shipped as content.
+	const FString SiblingDocsDir = InRoot.BaseDir / TEXT("Docs");
+	if (FPaths::DirectoryExists(SiblingDocsDir))
+	{
+		FileManager.FindFilesRecursive(Found, *SiblingDocsDir, *Wildcard, /*Files*/ true, /*Directories*/ false, /*bClearFileNames*/ false);
+	}
+
+	// Markdown sitting directly in the base folder: README.md, CHANGELOG.md and the like. Not
+	// recursive, deliberately - see the comment on this function.
+	{
+		TArray<FString> BaseNames;
+		FileManager.FindFiles(BaseNames, *InRoot.BaseDir, DocsFileExtension);
+		for (const FString& Name : BaseNames)
+		{
+			Found.Add(InRoot.BaseDir / Name);
+		}
+	}
+
+	for (FString& File : Found)
+	{
+		// A plugin whose Content sits inside its base folder can match the same file twice.
+		OutFiles.AddUnique(FPaths::ConvertRelativePathToFull(MoveTemp(File)));
+	}
 }
 
 FString KhaosDocs::GetDocumentTitle(const FString& InFilePath)

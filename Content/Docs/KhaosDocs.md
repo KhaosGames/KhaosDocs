@@ -8,14 +8,25 @@ prefer to keep them together. Both work; the Content Browser shows the file wher
 
 This page is one of them, at `Plugins/KhaosDocs/Content/Docs/KhaosDocs.md`.
 
-## Scope
+## Where documents are found
 
-The project's own `Content` and every project plugin's `Content` are scanned. Engine content is
-not — there are several hundred engine plugins and none of their documentation is yours to
-maintain.
+Three places per plugin, and the same three for the project itself:
 
-There is nothing to register. A plugin participates by having a `.md` file somewhere in its
-`Content` folder.
+- Anywhere under `Content`, recursively.
+- A `Docs` folder beside the `.uplugin`, recursively.
+- Markdown sitting directly beside the `.uplugin` — `README.md`, `CHANGELOG.md` and the like.
+
+That last one is not searched recursively, so `Source`, `Binaries`, `Intermediate` and any
+vendored third-party readme are left alone.
+
+Only the `Content` files appear in the Content Browser; a mount has to be a directory inside a
+content root, and files outside `Content` are not content. The other two show up in the
+documentation window and open in the same editor.
+
+Engine content is not scanned at all. There are several hundred engine plugins and none of their
+documentation is yours to maintain.
+
+There is nothing to register. A plugin participates by having a `.md` file in one of those places.
 
 ## Working with a document
 

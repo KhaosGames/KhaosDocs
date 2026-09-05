@@ -25,14 +25,30 @@ namespace KhaosDocs
 		/** Content Browser path of the root, e.g. "/KhaosUI". */
 		FString VirtualPath;
 
-		/** Absolute path on disk, e.g. ".../Plugins/KhaosUI/Content". */
+		/** Absolute path of the Content folder, e.g. ".../Plugins/KhaosUI/Content". May not exist. */
 		FString DiskPath;
+
+		/**
+		 * Absolute path of the owner's base folder - the folder holding the .uplugin, or the
+		 * project folder. Documents outside Content are found relative to this.
+		 */
+		FString BaseDir;
 	};
 
 	/** Enumerate every project content root (the game plus project plugins). Engine roots are skipped. */
 	KHAOSDOCSEDITOR_API void FindDocRoots(TArray<FDocRoot>& OutRoots);
 
-	/** Recursively gather absolute paths of every markdown file under a content root. */
+	/**
+	 * Gather every markdown file belonging to a root, for the documentation window.
+	 *
+	 * Covers three places: all of Content recursively, a Docs folder beside the .uplugin, and any
+	 * markdown sitting directly in the base folder (README.md and friends). The base folder is not
+	 * searched recursively - doing so would walk Source, Binaries, Intermediate and any vendored
+	 * third-party readme.
+	 *
+	 * Only Content is mounted into the Content Browser. The other two are reachable from the
+	 * documentation window and open in the document editor like any other file.
+	 */
 	KHAOSDOCSEDITOR_API void FindDocsInRoot(const FDocRoot& InRoot, TArray<FString>& OutFiles);
 
 	/** Human readable title for a document - its first H1 if present, otherwise the file name. */

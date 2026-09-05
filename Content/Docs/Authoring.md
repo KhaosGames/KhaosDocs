@@ -44,7 +44,7 @@ name is used. Worth the one line.
 
 ## Where files go
 
-Anywhere under a `Content` folder. Beside the assets they describe:
+Beside the assets they describe:
 
 ```
 Content/UI/
@@ -52,7 +52,7 @@ Content/UI/
     MainMenu.md
 ```
 
-Or collected in one place, if that suits the plugin better:
+Collected under Content, if that suits the plugin better:
 
 ```
 Content/Docs/
@@ -60,5 +60,17 @@ Content/Docs/
     Systems/Input.md
 ```
 
+Or outside Content entirely, next to the `.uplugin`:
+
+```
+MyPlugin.uplugin
+README.md
+Docs/
+    Architecture.md
+```
+
+The first two appear in the Content Browser. All three appear in the documentation window and open
+in the same editor.
+
 The table of contents groups by plugin and shows the containing folder next to each title, so
-several files named `Readme` stay distinguishable.
+several files named `Readme` stay distinguishable. A file at the plugin root shows no folder.
