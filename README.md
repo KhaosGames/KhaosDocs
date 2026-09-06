@@ -2,9 +2,12 @@
 
 Markdown documentation shown in the Unreal Content Browser, without turning it into assets.
 
-Put a `.md` anywhere under a `Content` folder and it appears in the Content Browser, where it sits
-on disk. There is nothing to register. The files stay markdown, so they diff in git and open in any
-editor.
+Put a `.md` or `.txt` anywhere under a `Content` folder and it appears in the Content Browser, where
+it sits on disk. There is nothing to register. The files stay plain text, so they diff in git and
+open in any editor.
+
+`.md` and `.txt` share a single Document type and are both rendered as markdown. New documents are
+created as `.md`.
 
 The documentation window additionally picks up a `Docs` folder beside the `.uplugin` and any
 markdown at the plugin root, such as `README.md`. Those cannot go in the Content Browser — a mount

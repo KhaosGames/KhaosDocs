@@ -3,11 +3,18 @@
 #include "KhaosDocsStyle.h"
 
 #include "Brushes/SlateColorBrush.h"
+#include "Brushes/SlateImageBrush.h"
 #include "Brushes/SlateNoResource.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
 #include "Styling/CoreStyle.h"
+#include "Styling/SlateStyleMacros.h"
 #include "Styling/SlateStyleRegistry.h"
 #include "Styling/SlateTypes.h"
 #include "Styling/StyleColors.h"
+
+// Required by the IMAGE_BRUSH_SVG macro, which resolves paths against the style set's content root.
+#define RootToContentDir Style->RootToContentDir
 
 TSharedPtr<FSlateStyleSet> FKhaosDocsStyle::StyleInstance = nullptr;
 
@@ -44,6 +51,24 @@ FName FKhaosDocsStyle::GetStyleSetName()
 TSharedRef<FSlateStyleSet> FKhaosDocsStyle::Create()
 {
 	TSharedRef<FSlateStyleSet> Style = MakeShared<FSlateStyleSet>(GetStyleSetName());
+
+	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("KhaosDocs")))
+	{
+		Style->SetContentRoot(Plugin->GetBaseDir() / TEXT("Resources"));
+
+		const FVector2D Icon16x16(16.0f, 16.0f);
+		const FVector2D Icon64x64(64.0f, 64.0f);
+
+		// Every configured extension shares the one "Document" type, so a single pair of icons
+		// covers them all. Documents have no UClass, so the Content Browser falls back to looking
+		// these up by name across every registered style set - see
+		// SAssetThumbnail::UpdateThumbnailClass.
+		Style->Set("ClassThumbnail.Document", new IMAGE_BRUSH_SVG(TEXT("DocumentThumbnail"), Icon64x64));
+		Style->Set("ClassIcon.Document", new IMAGE_BRUSH_SVG(TEXT("Document"), Icon16x16));
+
+		// Mark used by the toolbar button, the documentation tab and the table of contents rows.
+		Style->Set("KhaosDocs.Icon", new IMAGE_BRUSH_SVG(TEXT("Document"), Icon16x16));
+	}
 
 	const FTextBlockStyle Body = FTextBlockStyle()
 		.SetFont(FCoreStyle::GetDefaultFontStyle("Regular", 10))
@@ -106,3 +131,6 @@ TSharedRef<FSlateStyleSet> FKhaosDocsStyle::Create()
 
 	return Style;
 }
+
+// Keep the macro out of other translation units in a unity build.
+#undef RootToContentDir

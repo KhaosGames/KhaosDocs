@@ -234,7 +234,12 @@ TSharedRef<ITableRow> SKhaosDocsBrowser::OnGenerateRow(TSharedPtr<FDocsTreeItem>
 {
 	const bool bIsDocument = InItem->IsDocument();
 	const TCHAR* StyleName = bIsDocument ? TEXT("Doc.Body") : TEXT("Doc.Bold");
-	const TCHAR* IconName = bIsDocument ? TEXT("Icons.Documentation") : TEXT("Icons.FolderClosed");
+
+	// Documents carry the plugin's own mark, matching what the Content Browser shows for them.
+	// GetOptionalBrush rather than GetBrush so a missing resource degrades instead of asserting.
+	const FSlateBrush* IconBrush = bIsDocument
+		? FKhaosDocsStyle::Get().GetOptionalBrush("KhaosDocs.Icon", nullptr, FAppStyle::GetBrush("Icons.Documentation"))
+		: FAppStyle::GetBrush("Icons.FolderClosed");
 
 	return SNew(STableRow<TSharedPtr<FDocsTreeItem>>, OwnerTable)
 		[
@@ -246,7 +251,7 @@ TSharedRef<ITableRow> SKhaosDocsBrowser::OnGenerateRow(TSharedPtr<FDocsTreeItem>
 			.Padding(2.0f, 2.0f, 6.0f, 2.0f)
 			[
 				SNew(SImage)
-				.Image(FAppStyle::GetBrush(IconName))
+				.Image(IconBrush)
 			]
 
 			+ SHorizontalBox::Slot()

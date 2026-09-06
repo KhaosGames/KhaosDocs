@@ -7,8 +7,11 @@
 
 namespace KhaosDocs
 {
-	/** File extension (no dot) handled by the docs data source. */
-	KHAOSDOCSEDITOR_API extern const TCHAR* DocsFileExtension;
+	/**
+	 * Extensions treated as documents. Lowercase, no leading dot.
+	 * The first entry is the primary one, used when creating a new document.
+	 */
+	KHAOSDOCSEDITOR_API TArray<FString> GetDocumentExtensions();
 
 	/**
 	 * A project content root that is scanned for markdown.

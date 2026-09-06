@@ -1,7 +1,11 @@
 # Khaos Docs
 
-Markdown files under any `Content` folder show up in the Content Browser as documents. Nothing is
-imported and nothing becomes a `.uasset`.
+Documents under any `Content` folder show up in the Content Browser. Nothing is imported and
+nothing becomes a `.uasset`.
+
+`.md` and `.txt` are both recognised, and there is no distinction between them: one Document type,
+one renderer, markdown in both cases. A `.txt` with no markup simply comes out as plain paragraphs.
+New documents are created as `.md`.
 
 Put a `.md` wherever it belongs — beside the assets it describes, or in a `Docs` folder if you
 prefer to keep them together. Both work; the Content Browser shows the file where it sits on disk.
@@ -14,7 +18,7 @@ Three places per plugin, and the same three for the project itself:
 
 - Anywhere under `Content`, recursively.
 - A `Docs` folder beside the `.uplugin`, recursively.
-- Markdown sitting directly beside the `.uplugin` — `README.md`, `CHANGELOG.md` and the like.
+- Documents sitting directly beside the `.uplugin` — `README.md`, `CHANGELOG.md` and the like.
 
 That last one is not searched recursively, so `Source`, `Binaries`, `Intermediate` and any
 vendored third-party readme are left alone.

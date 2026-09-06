@@ -35,7 +35,13 @@
 
 #define LOCTEXT_NAMESPACE "KhaosDocsEditor"
 
-const TCHAR* KhaosDocs::DocsFileExtension = TEXT("md");
+TArray<FString> KhaosDocs::GetDocumentExtensions()
+{
+	// Every extension registers its own Content Browser file type, so the list is deliberately
+	// short. Formats that are not markdown (.rst, .adoc, Epic's own .udn) would render wrong
+	// rather than merely plain, and would need their own parser instead of an entry here.
+	return { TEXT("md"), TEXT("txt") };
+}
 
 namespace
 {
@@ -128,26 +134,29 @@ void KhaosDocs::FindDocRoots(TArray<FDocRoot>& OutRoots)
 
 void KhaosDocs::FindDocsInRoot(const FDocRoot& InRoot, TArray<FString>& OutFiles)
 {
-	const FString Wildcard = FString::Printf(TEXT("*.%s"), DocsFileExtension);
 	IFileManager& FileManager = IFileManager::Get();
+	const FString SiblingDocsDir = InRoot.BaseDir / TEXT("Docs");
+	const bool bHasSiblingDocs = FPaths::DirectoryExists(SiblingDocsDir);
 
 	TArray<FString> Found;
 
-	// Everything under Content. This is the set the Content Browser also shows.
-	FileManager.FindFilesRecursive(Found, *InRoot.DiskPath, *Wildcard, /*Files*/ true, /*Directories*/ false);
-
-	// A Docs folder beside the .uplugin, for documentation that is not shipped as content.
-	const FString SiblingDocsDir = InRoot.BaseDir / TEXT("Docs");
-	if (FPaths::DirectoryExists(SiblingDocsDir))
+	for (const FString& Extension : GetDocumentExtensions())
 	{
-		FileManager.FindFilesRecursive(Found, *SiblingDocsDir, *Wildcard, /*Files*/ true, /*Directories*/ false, /*bClearFileNames*/ false);
-	}
+		const FString Wildcard = FString::Printf(TEXT("*.%s"), *Extension);
 
-	// Markdown sitting directly in the base folder: README.md, CHANGELOG.md and the like. Not
-	// recursive, deliberately - see the comment on this function.
-	{
+		// Everything under Content. This is the set the Content Browser also shows.
+		FileManager.FindFilesRecursive(Found, *InRoot.DiskPath, *Wildcard, /*Files*/ true, /*Directories*/ false, /*bClearFileNames*/ false);
+
+		// A Docs folder beside the .uplugin, for documentation that is not shipped as content.
+		if (bHasSiblingDocs)
+		{
+			FileManager.FindFilesRecursive(Found, *SiblingDocsDir, *Wildcard, /*Files*/ true, /*Directories*/ false, /*bClearFileNames*/ false);
+		}
+
+		// Documents sitting directly in the base folder: README.md, CHANGELOG.md and the like.
+		// Not recursive, deliberately - see the comment on this function.
 		TArray<FString> BaseNames;
-		FileManager.FindFiles(BaseNames, *InRoot.BaseDir, DocsFileExtension);
+		FileManager.FindFiles(BaseNames, *InRoot.BaseDir, *Extension);
 		for (const FString& Name : BaseNames)
 		{
 			Found.Add(InRoot.BaseDir / Name);
@@ -183,8 +192,8 @@ FString KhaosDocs::GetDocumentTitle(const FString& InFilePath)
 /**
  * Editor module for the docs system.
  *
- * Registers a Content Browser file data source for .md, mounts every plugin's Content/Docs folder
- * into the Content Browser, and owns the document editors and the table-of-contents tab.
+ * Registers a Content Browser file data source for each document extension, mounts every project
+ * content root into it, and owns the document editors and the table-of-contents tab.
  */
 class FKhaosDocsEditorModule : public IKhaosDocsEditorModule, public FGCObject
 {
@@ -297,21 +306,34 @@ void FKhaosDocsEditorModule::RegisterDataSource()
 	DirectoryActions.GetAttribute.BindStatic(&ContentBrowserFileData::FDefaultFileActions::GetItemAttribute);
 	Config.SetDirectoryActions(DirectoryActions);
 
-	ContentBrowserFileData::FFileActions FileActions;
-	FileActions.TypeExtension = KhaosDocs::DocsFileExtension;
-	// Synthetic class path: FFileActions requires a TypeName, but no such UClass exists and none
-	// is needed - the Content Browser only uses it for naming and filtering.
-	FileActions.TypeName = FTopLevelAssetPath(TEXT("/Script/KhaosDocs.Document"));
-	FileActions.TypeDisplayName = LOCTEXT("DocTypeName", "Document");
-	FileActions.TypeShortDescription = LOCTEXT("DocTypeShortDescription", "Document");
-	FileActions.TypeFullDescription = LOCTEXT("DocTypeFullDescription", "A markdown document stored as a plain .md file on disk");
-	FileActions.DefaultNewFileName = TEXT("NewDocument");
-	FileActions.TypeColor = FColor(120, 190, 255);
-	FileActions.PassesFilter.BindStatic(&ContentBrowserFileData::FDefaultFileActions::ItemPassesFilter, true);
-	FileActions.GetAttribute.BindStatic(&ContentBrowserFileData::FDefaultFileActions::GetItemAttribute);
-	FileActions.Create.BindStatic(&FKhaosDocsEditorModule::OnCreateDocument);
-	FileActions.Edit.BindRaw(this, &FKhaosDocsEditorModule::OnEditDocument);
-	Config.RegisterFileActions(FileActions);
+	// Every extension registers as the same "Document" type and is rendered as markdown. The data
+	// source is keyed by extension, so each still needs its own registration.
+	const TArray<FString> Extensions = KhaosDocs::GetDocumentExtensions();
+	for (int32 Index = 0; Index < Extensions.Num(); ++Index)
+	{
+		// The Add-New menu builds its entry name from the type name, so with a shared type only the
+		// primary extension offers "Create Document" - otherwise every extension would contribute a
+		// colliding entry. CanCreate is the engine's own hook for exactly this (see
+		// UContentBrowserFileDataSource::PopulateAddNewContextMenu).
+		const bool bIsPrimary = (Index == 0);
+
+		ContentBrowserFileData::FFileActions FileActions;
+		FileActions.TypeExtension = Extensions[Index];
+		// Synthetic class path: FFileActions requires a TypeName, but no such UClass exists and
+		// none is needed - the Content Browser only uses it for naming, filtering and icons.
+		FileActions.TypeName = FTopLevelAssetPath(TEXT("/Script/KhaosDocs.Document"));
+		FileActions.TypeDisplayName = LOCTEXT("DocTypeName", "Document");
+		FileActions.TypeShortDescription = LOCTEXT("DocTypeShortDescription", "Document");
+		FileActions.TypeFullDescription = LOCTEXT("DocTypeFullDescription", "A document stored as a plain text file on disk");
+		FileActions.DefaultNewFileName = TEXT("NewDocument");
+		FileActions.TypeColor = FColor(120, 190, 255);
+		FileActions.PassesFilter.BindStatic(&ContentBrowserFileData::FDefaultFileActions::ItemPassesFilter, true);
+		FileActions.GetAttribute.BindStatic(&ContentBrowserFileData::FDefaultFileActions::GetItemAttribute);
+		FileActions.CanCreate.BindLambda([bIsPrimary](const FName, const FString&, FText*) { return bIsPrimary; });
+		FileActions.Create.BindStatic(&FKhaosDocsEditorModule::OnCreateDocument);
+		FileActions.Edit.BindRaw(this, &FKhaosDocsEditorModule::OnEditDocument);
+		Config.RegisterFileActions(FileActions);
+	}
 
 	DataSource.Reset(NewObject<UContentBrowserFileDataSource>(GetTransientPackage(), KhaosDocsDataSourceName));
 	DataSource->Initialize(Config);
@@ -396,7 +418,8 @@ void FKhaosDocsEditorModule::OnContentPathDismounted(const FString& InAssetPath,
 bool FKhaosDocsEditorModule::OnCreateDocument(const FName InFilePath, const FString& InFilename, const FStructOnScope& InConfig)
 {
 	// Seed the file with an H1 matching the name the user just typed, so the new document already
-	// has a title in the table of contents.
+	// has a title in the table of contents. Every document type is markdown, so this holds
+	// whatever extension the file ends up with.
 	const FString Title = FPaths::GetBaseFilename(InFilename);
 	const FString Contents = FString::Printf(
 		TEXT("# %s") LINE_TERMINATOR LINE_TERMINATOR TEXT("Write your documentation here.") LINE_TERMINATOR,
@@ -471,7 +494,7 @@ void FKhaosDocsEditorModule::RegisterMenus()
 			FUIAction(FExecuteAction::CreateRaw(this, &FKhaosDocsEditorModule::OpenDocsBrowser)),
 			LOCTEXT("DocsToolbarLabel", "Docs"),
 			LOCTEXT("DocsToolbarTooltip", "Open the project documentation browser."),
-			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Documentation")));
+			FSlateIcon(FKhaosDocsStyle::GetStyleSetName(), "KhaosDocs.Icon")));
 	}
 }
 
@@ -482,7 +505,7 @@ void FKhaosDocsEditorModule::RegisterTabs()
 			FOnSpawnTab::CreateRaw(this, &FKhaosDocsEditorModule::SpawnDocsBrowserTab))
 		.SetDisplayName(LOCTEXT("DocsTabTitle", "Documentation"))
 		.SetTooltipText(LOCTEXT("DocsTabTooltip", "Browse documentation from every plugin in this project."))
-		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Documentation"))
+		.SetIcon(FSlateIcon(FKhaosDocsStyle::GetStyleSetName(), "KhaosDocs.Icon"))
 		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory());
 }
 

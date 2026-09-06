@@ -3,6 +3,10 @@
 Documents are ordinary markdown. The renderer covers a subset; anything outside it falls through
 as plain text rather than failing, so a file that reads well on GitHub will read acceptably here.
 
+`.md` and `.txt` are both recognised. There is no distinction between them — one Document type, one
+renderer. A plain `.txt` with no markup just comes out as paragraphs, which is usually what you
+want, and a `.txt` that happens to use markdown gets it rendered.
+
 ## What renders
 
 - Headings, `#` through `###`. Deeper levels render at the same size as `###`.

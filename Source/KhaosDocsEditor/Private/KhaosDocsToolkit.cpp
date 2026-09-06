@@ -161,7 +161,7 @@ void FKhaosDocsToolkit::RegisterTabSpawners(const TSharedRef<FTabManager>& InTab
 
 	FAssetEditorToolkit::RegisterTabSpawners(InTabManager);
 
-	const FSlateIcon TabIcon(FAppStyle::GetAppStyleSetName(), "Icons.Documentation");
+	const FSlateIcon TabIcon(FKhaosDocsStyle::GetStyleSetName(), "KhaosDocs.Icon");
 
 	InTabManager->RegisterTabSpawner(PreviewTabId, FOnSpawnTab::CreateSP(this, &FKhaosDocsToolkit::SpawnTab_Preview))
 		.SetDisplayName(LOCTEXT("PreviewTab", "Preview"))
