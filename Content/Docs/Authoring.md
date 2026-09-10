@@ -73,8 +73,9 @@ Docs/
     Architecture.md
 ```
 
-The first two appear in the Content Browser. All three appear in the documentation window and open
-in the same editor.
+The first two appear in the Content Browser. All three appear in the documentation window.
 
-The table of contents groups by plugin and shows the containing folder next to each title, so
-several files named `Readme` stay distinguishable. A file at the plugin root shows no folder.
+The table of contents groups by plugin and mirrors the folders on disk, so several files named
+`Readme` stay distinguishable by where they sit. Runs of single folders collapse into one entry,
+`Content/Docs`, the way code editors do. A file at the plugin root sits directly under the plugin.
+When a document's title differs from its file name, the file name is shown beside it.

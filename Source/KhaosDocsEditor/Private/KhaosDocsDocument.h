@@ -8,14 +8,18 @@
 #include "KhaosDocsDocument.generated.h"
 
 /**
- * A markdown file on disk, wrapped in a transient UObject purely so it can be handed to
- * FAssetEditorToolkit / UAssetEditorSubsystem.
+ * A markdown file on disk, wrapped in a transient UObject.
  *
  * This object is never saved into a package and never appears in the asset registry - it exists
- * only for the lifetime of an open document editor. The file on disk stays plain markdown, which
- * is the whole point: docs remain diffable, editable outside Unreal, and free of .uasset baggage.
+ * only while the document is open. The file on disk stays plain markdown, which is the whole
+ * point: docs remain diffable, editable outside Unreal, and free of .uasset baggage.
+ *
+ * The class names the Content Browser file type. The Content Browser will only draw a class
+ * thumbnail for a type that resolves to a real UClass, so the file data source registers documents
+ * under this class path and the style set keys its icons by this class name. The DisplayName is
+ * what the Content Browser tooltip shows as the type.
  */
-UCLASS(Transient)
+UCLASS(Transient, meta = (DisplayName = "Document"))
 class UKhaosDocsDocument : public UObject
 {
 	GENERATED_BODY()

@@ -208,6 +208,30 @@ bool IsHorizontalRule(const FString& InTrimmed)
 	return true;
 }
 
+/** Strip up to four leading spaces (or one tab) from an indented code line. */
+FString StripCodeIndent(const FString& InLine)
+{
+	int32 Removed = 0;
+	int32 Index = 0;
+	while (Index < InLine.Len() && Removed < 4)
+	{
+		if (InLine[Index] == TEXT(' '))
+		{
+			++Removed;
+		}
+		else if (InLine[Index] == TEXT('\t'))
+		{
+			Removed += 4;
+		}
+		else
+		{
+			break;
+		}
+		++Index;
+	}
+	return InLine.RightChop(Index);
+}
+
 } // anonymous namespace
 
 FDocument Parse(const FString& InMarkdown)
@@ -217,18 +241,23 @@ FDocument Parse(const FString& InMarkdown)
 	TArray<FString> Lines;
 	InMarkdown.ParseIntoArrayLines(Lines, /*bCullEmpty*/ false);
 
-	FString Out;
 	bool bInFence = false;
 	bool bPreviousLineWasBlank = true;
 
-	auto AppendBlock = [&Out, &bPreviousLineWasBlank](const FString& InBlock)
+	// The block currently being accumulated, if any. Paragraphs, quotes and code blocks span
+	// several source lines; everything else is one line and is pushed immediately.
+	FBlock* Open = nullptr;
+
+	auto Close = [&Open]()
 	{
-		if (!Out.IsEmpty())
-		{
-			Out += LINE_TERMINATOR;
-		}
-		Out += InBlock;
+		Open = nullptr;
+	};
+
+	auto Push = [&Document, &Open, &bPreviousLineWasBlank](FBlock&& InBlock) -> FBlock&
+	{
+		Open = nullptr;
 		bPreviousLineWasBlank = false;
+		return Document.Blocks.Add_GetRef(MoveTemp(InBlock));
 	};
 
 	for (int32 LineIndex = 0; LineIndex < Lines.Num(); ++LineIndex)
@@ -240,37 +269,84 @@ FDocument Parse(const FString& InMarkdown)
 		if (Trimmed.StartsWith(TEXT("```"), ESearchCase::CaseSensitive)
 			|| Trimmed.StartsWith(TEXT("~~~"), ESearchCase::CaseSensitive))
 		{
+			if (bInFence)
+			{
+				Close();
+			}
+			else
+			{
+				FBlock Block;
+				Block.Type = EBlockType::CodeBlock;
+				Open = &Push(MoveTemp(Block));
+			}
 			bInFence = !bInFence;
 			continue;
 		}
 
 		if (bInFence)
 		{
-			AppendBlock(FString::Printf(TEXT("<Doc.CodeBlock>    %s</>"), *EscapeRichText(Line)));
+			if (!Open || Open->Type != EBlockType::CodeBlock)
+			{
+				FBlock Block;
+				Block.Type = EBlockType::CodeBlock;
+				Open = &Push(MoveTemp(Block));
+			}
+			if (!Open->Code.IsEmpty())
+			{
+				Open->Code += TEXT("\n");
+			}
+			Open->Code += Line.TrimEnd();
 			continue;
 		}
 
 		if (Trimmed.IsEmpty())
 		{
-			// Collapse runs of blank lines into a single paragraph break.
-			if (!bPreviousLineWasBlank && !Out.IsEmpty())
+			// A blank line ends whatever block was open. Indented code keeps going across blank
+			// lines only while the next non-blank line is still indented, handled below.
+			if (!(Open && Open->Type == EBlockType::CodeBlock))
 			{
-				Out += LINE_TERMINATOR;
-				bPreviousLineWasBlank = true;
+				Close();
 			}
+			bPreviousLineWasBlank = true;
 			continue;
 		}
 
 		// Indented code block (four spaces), only when it does not continue a paragraph.
-		if (MeasureIndent(Line) >= 4 && bPreviousLineWasBlank)
+		if (MeasureIndent(Line) >= 4 && (bPreviousLineWasBlank || (Open && Open->Type == EBlockType::CodeBlock)))
 		{
-			AppendBlock(FString::Printf(TEXT("<Doc.CodeBlock>%s</>"), *EscapeRichText(Line)));
+			if (!Open || Open->Type != EBlockType::CodeBlock)
+			{
+				FBlock Block;
+				Block.Type = EBlockType::CodeBlock;
+				Open = &Push(MoveTemp(Block));
+			}
+			else
+			{
+				// Blank lines skipped above between two indented lines belong to the block.
+				int32 Back = LineIndex - 1;
+				while (Back >= 0 && Lines[Back].TrimStartAndEnd().IsEmpty())
+				{
+					Open->Code += TEXT("\n");
+					--Back;
+				}
+				Open->Code += TEXT("\n");
+			}
+			Open->Code += StripCodeIndent(Line.TrimEnd());
+			bPreviousLineWasBlank = false;
 			continue;
+		}
+
+		// A blank line followed by non-indented text closes an indented code block.
+		if (Open && Open->Type == EBlockType::CodeBlock)
+		{
+			Close();
 		}
 
 		if (IsHorizontalRule(Trimmed))
 		{
-			AppendBlock(TEXT("<Doc.Quote>\x2500\x2500\x2500\x2500\x2500\x2500\x2500\x2500\x2500\x2500\x2500\x2500</>"));
+			FBlock Block;
+			Block.Type = EBlockType::Rule;
+			Push(MoveTemp(Block));
 			continue;
 		}
 
@@ -286,40 +362,63 @@ FDocument Parse(const FString& InMarkdown)
 			// "#Foo" is not a heading in CommonMark - a space is required.
 			if (Level <= 6 && Level < Trimmed.Len() && Trimmed[Level] == TEXT(' '))
 			{
-				const FString HeadingText = Trimmed.RightChop(Level).TrimStartAndEnd();
-				const int32 ClampedLevel = FMath::Clamp(Level, 1, 3);
+				FString HeadingText = Trimmed.RightChop(Level).TrimStartAndEnd();
+
+				// Optional closing hashes: "## Title ##".
+				while (HeadingText.EndsWith(TEXT("#")))
+				{
+					HeadingText.LeftChopInline(1);
+				}
+				HeadingText.TrimEndInline();
 
 				FHeading& Heading = Document.Headings.AddDefaulted_GetRef();
 				Heading.Level = Level;
 				Heading.Text = StripInlineMarkup(HeadingText);
-				Heading.LineIndex = LineIndex;
+				Heading.BlockIndex = Document.Blocks.Num();
 
 				if (Level == 1 && Document.Title.IsEmpty())
 				{
 					Document.Title = Heading.Text;
 				}
 
-				AppendBlock(FString::Printf(TEXT("<Doc.H%d>%s</>"), ClampedLevel, *ParseInline(HeadingText)));
+				FBlock Block;
+				Block.Type = EBlockType::Heading;
+				Block.Level = Level;
+				Block.RichText = ParseInline(HeadingText);
+				Push(MoveTemp(Block));
 				continue;
 			}
 		}
 
-		// Block quote.
+		// Block quote. Consecutive quoted lines form one block.
 		if (Trimmed.StartsWith(TEXT(">"), ESearchCase::CaseSensitive))
 		{
 			const FString QuoteText = Trimmed.RightChop(1).TrimStart();
-			AppendBlock(FString::Printf(TEXT("<Doc.Quote>\x2502 %s</>"), *ParseInline(QuoteText)));
+			if (Open && Open->Type == EBlockType::Quote)
+			{
+				Open->RichText += QuoteText.IsEmpty() ? TEXT("\n") : TEXT(" ");
+				Open->RichText += ParseInline(QuoteText);
+			}
+			else
+			{
+				FBlock Block;
+				Block.Type = EBlockType::Quote;
+				Block.RichText = ParseInline(QuoteText);
+				Open = &Push(MoveTemp(Block));
+			}
 			continue;
 		}
 
-		// Bullet list. Nesting is rendered by preserving the source indent.
+		// Bullet list. Nesting is taken from the source indent, two spaces per level.
 		if (Trimmed.StartsWith(TEXT("- "), ESearchCase::CaseSensitive)
 			|| Trimmed.StartsWith(TEXT("* "), ESearchCase::CaseSensitive)
 			|| Trimmed.StartsWith(TEXT("+ "), ESearchCase::CaseSensitive))
 		{
-			const int32 Depth = MeasureIndent(Line) / 2;
-			const FString Indent = FString::ChrN(Depth * 4 + 4, TEXT(' '));
-			AppendBlock(FString::Printf(TEXT("%s\x2022 %s"), *Indent, *ParseInline(Trimmed.RightChop(2))));
+			FBlock Block;
+			Block.Type = EBlockType::ListItem;
+			Block.Level = MeasureIndent(Line) / 2;
+			Block.RichText = ParseInline(Trimmed.RightChop(2).TrimStart());
+			Push(MoveTemp(Block));
 			continue;
 		}
 
@@ -332,32 +431,35 @@ FDocument Parse(const FString& InMarkdown)
 			}
 
 			if (DigitCount > 0 && DigitCount + 1 < Trimmed.Len()
-				&& Trimmed[DigitCount] == TEXT('.') && Trimmed[DigitCount + 1] == TEXT(' '))
+				&& (Trimmed[DigitCount] == TEXT('.') || Trimmed[DigitCount] == TEXT(')'))
+				&& Trimmed[DigitCount + 1] == TEXT(' '))
 			{
-				const int32 Depth = MeasureIndent(Line) / 2;
-				const FString Indent = FString::ChrN(Depth * 4 + 4, TEXT(' '));
-				AppendBlock(FString::Printf(
-					TEXT("%s%s. %s"),
-					*Indent,
-					*Trimmed.Left(DigitCount),
-					*ParseInline(Trimmed.RightChop(DigitCount + 2))));
+				FBlock Block;
+				Block.Type = EBlockType::ListItem;
+				Block.Level = MeasureIndent(Line) / 2;
+				Block.Marker = Trimmed.Left(DigitCount) + TEXT(".");
+				Block.RichText = ParseInline(Trimmed.RightChop(DigitCount + 2).TrimStart());
+				Push(MoveTemp(Block));
 				continue;
 			}
 		}
 
 		// Plain paragraph. Consecutive non-blank lines are joined into one wrapped paragraph.
-		if (bPreviousLineWasBlank || Out.IsEmpty())
+		// A line following a list item continues that item, as on GitHub.
+		if (Open && (Open->Type == EBlockType::Paragraph || Open->Type == EBlockType::ListItem))
 		{
-			AppendBlock(ParseInline(Trimmed));
+			Open->RichText += TEXT(" ");
+			Open->RichText += ParseInline(Trimmed);
 		}
 		else
 		{
-			Out += TEXT(" ");
-			Out += ParseInline(Trimmed);
+			FBlock Block;
+			Block.Type = EBlockType::Paragraph;
+			Block.RichText = ParseInline(Trimmed);
+			Open = &Push(MoveTemp(Block));
 		}
 	}
 
-	Document.RichText = FText::FromString(Out);
 	return Document;
 }
 

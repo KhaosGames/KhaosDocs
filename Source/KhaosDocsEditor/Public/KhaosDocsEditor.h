@@ -71,7 +71,7 @@ public:
 		return FModuleManager::Get().IsModuleLoaded(TEXT("KhaosDocsEditor"));
 	}
 
-	/** Open a markdown file in the in-editor document editor. Focuses an existing editor if one is open. */
+	/** Show a document in the documentation window, opening the window if needed. */
 	virtual bool OpenDocument(const FString& InFilePath) = 0;
 
 	/** Summon the project-wide table of contents tab. */

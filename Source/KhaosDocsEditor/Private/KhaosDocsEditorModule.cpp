@@ -5,7 +5,6 @@
 #include "ContentBrowserDataSubsystem.h"
 #include "ContentBrowserFileDataCore.h"
 #include "ContentBrowserFileDataSource.h"
-#include "Editor.h"
 #include "IContentBrowserDataModule.h"
 #include "Misc/CoreDelegates.h"
 #include "Framework/Application/SlateApplication.h"
@@ -14,17 +13,13 @@
 #include "Interfaces/IPluginManager.h"
 #include "KhaosDocsDocument.h"
 #include "KhaosDocsStyle.h"
-#include "KhaosDocsToolkit.h"
 #include "Misc/App.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "SKhaosDocsBrowser.h"
 #include "Styling/AppStyle.h"
-#include "Subsystems/AssetEditorSubsystem.h"
 #include "ToolMenus.h"
-#include "UObject/GCObject.h"
-#include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/StructOnScope.h"
 #include "UObject/TopLevelAssetPath.h"
@@ -193,9 +188,9 @@ FString KhaosDocs::GetDocumentTitle(const FString& InFilePath)
  * Editor module for the docs system.
  *
  * Registers a Content Browser file data source for each document extension, mounts every project
- * content root into it, and owns the document editors and the table-of-contents tab.
+ * content root into it, and owns the documentation window.
  */
-class FKhaosDocsEditorModule : public IKhaosDocsEditorModule, public FGCObject
+class FKhaosDocsEditorModule : public IKhaosDocsEditorModule
 {
 public:
 	//~ Begin IModuleInterface
@@ -208,11 +203,6 @@ public:
 	virtual void OpenDocsBrowser() override;
 	virtual void RefreshMounts() override;
 	//~ End IKhaosDocsEditorModule
-
-	//~ Begin FGCObject
-	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
-	virtual FString GetReferencerName() const override { return TEXT("FKhaosDocsEditorModule"); }
-	//~ End FGCObject
 
 private:
 	void RegisterDataSource();
@@ -233,9 +223,6 @@ private:
 	TSharedRef<SDockTab> SpawnDocsBrowserTab(const FSpawnTabArgs& Args);
 
 	TStrongObjectPtr<UContentBrowserFileDataSource> DataSource;
-
-	/** Live document objects, keyed by absolute file path, so reopening a file focuses its editor. */
-	TMap<FString, TObjectPtr<UKhaosDocsDocument>> OpenDocuments;
 
 	TWeakPtr<SKhaosDocsBrowser> DocsBrowser;
 };
@@ -281,18 +268,9 @@ void FKhaosDocsEditorModule::ShutdownModule()
 	FPackageName::OnContentPathMounted().RemoveAll(this);
 	FPackageName::OnContentPathDismounted().RemoveAll(this);
 
-	OpenDocuments.Empty();
 	DataSource.Reset();
 
 	FKhaosDocsStyle::Shutdown();
-}
-
-void FKhaosDocsEditorModule::AddReferencedObjects(FReferenceCollector& Collector)
-{
-	for (TPair<FString, TObjectPtr<UKhaosDocsDocument>>& Pair : OpenDocuments)
-	{
-		Collector.AddReferencedObject(Pair.Value);
-	}
 }
 
 void FKhaosDocsEditorModule::RegisterDataSource()
@@ -319,9 +297,11 @@ void FKhaosDocsEditorModule::RegisterDataSource()
 
 		ContentBrowserFileData::FFileActions FileActions;
 		FileActions.TypeExtension = Extensions[Index];
-		// Synthetic class path: FFileActions requires a TypeName, but no such UClass exists and
-		// none is needed - the Content Browser only uses it for naming, filtering and icons.
-		FileActions.TypeName = FTopLevelAssetPath(TEXT("/Script/KhaosDocs.Document"));
+		// A real class path, even though these files are never loaded as objects. The Content
+		// Browser draws a class thumbnail only when the type resolves to a UClass, and takes the
+		// type's display name from it, so a synthetic path would leave every document with a
+		// blank tile and a default icon in its tooltip.
+		FileActions.TypeName = UKhaosDocsDocument::StaticClass()->GetClassPathName();
 		FileActions.TypeDisplayName = LOCTEXT("DocTypeName", "Document");
 		FileActions.TypeShortDescription = LOCTEXT("DocTypeShortDescription", "Document");
 		FileActions.TypeFullDescription = LOCTEXT("DocTypeFullDescription", "A document stored as a plain text file on disk");
@@ -435,51 +415,22 @@ bool FKhaosDocsEditorModule::OnEditDocument(const FName InFilePath, const FStrin
 
 bool FKhaosDocsEditorModule::OpenDocument(const FString& InFilePath)
 {
-	if (!GEditor)
-	{
-		return false;
-	}
-
 	const FString FullPath = FPaths::ConvertRelativePathToFull(InFilePath);
 	if (!FPaths::FileExists(FullPath))
 	{
 		return false;
 	}
 
-	UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-	if (!AssetEditorSubsystem)
-	{
-		return false;
-	}
+	// Everything goes through the documentation window: one place to read, one place to edit.
+	OpenDocsBrowser();
 
-	UKhaosDocsDocument* Document = nullptr;
-	if (TObjectPtr<UKhaosDocsDocument>* Existing = OpenDocuments.Find(FullPath))
+	if (const TSharedPtr<SKhaosDocsBrowser> Browser = DocsBrowser.Pin())
 	{
-		Document = Existing->Get();
-	}
-
-	// The subsystem cannot dedupe for us: it only looks for an existing editor when the class has
-	// registered IAssetTypeActions, which a transient wrapper never will. So check here instead.
-	if (Document && AssetEditorSubsystem->FindEditorForAsset(Document, /*bFocusIfOpen*/ true) != nullptr)
-	{
+		Browser->ShowDocument(FullPath);
 		return true;
 	}
 
-	if (!Document)
-	{
-		Document = NewObject<UKhaosDocsDocument>(GetTransientPackage(), NAME_None, RF_Transient);
-		Document->FilePath = FullPath;
-		OpenDocuments.Add(FullPath, Document);
-	}
-
-	if (!Document->LoadFromDisk())
-	{
-		return false;
-	}
-
-	const TSharedRef<FKhaosDocsToolkit> Toolkit = MakeShared<FKhaosDocsToolkit>();
-	Toolkit->InitEditor(EToolkitMode::Standalone, TSharedPtr<IToolkitHost>(), Document);
-	return true;
+	return false;
 }
 
 void FKhaosDocsEditorModule::RegisterMenus()
@@ -514,9 +465,17 @@ TSharedRef<SDockTab> FKhaosDocsEditorModule::SpawnDocsBrowserTab(const FSpawnTab
 	TSharedRef<SKhaosDocsBrowser> Browser = SNew(SKhaosDocsBrowser);
 	DocsBrowser = Browser;
 
+	// A weak reference so the tab's delegate never keeps its own content alive.
+	const TWeakPtr<SKhaosDocsBrowser> WeakBrowser = Browser;
+
 	return SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
 		.Label(LOCTEXT("DocsTabTitle", "Documentation"))
+		.OnCanCloseTab_Lambda([WeakBrowser]()
+		{
+			const TSharedPtr<SKhaosDocsBrowser> Pinned = WeakBrowser.Pin();
+			return !Pinned.IsValid() || Pinned->CanClose();
+		})
 		[
 			Browser
 		];
@@ -527,11 +486,17 @@ void FKhaosDocsEditorModule::OpenDocsBrowser()
 	// Pick up docs folders created since the editor started before showing the window.
 	RefreshMounts();
 
+	// Invoking the tab spawns the browser the first time, which scans on construction; after that
+	// the existing one is brought forward and rescanned so new files show up.
+	const bool bAlreadyOpen = DocsBrowser.IsValid();
 	FGlobalTabmanager::Get()->TryInvokeTab(KhaosDocsBrowserTabId);
 
-	if (const TSharedPtr<SKhaosDocsBrowser> Browser = DocsBrowser.Pin())
+	if (bAlreadyOpen)
 	{
-		Browser->Refresh();
+		if (const TSharedPtr<SKhaosDocsBrowser> Browser = DocsBrowser.Pin())
+		{
+			Browser->Refresh();
+		}
 	}
 }
 

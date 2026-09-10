@@ -17,10 +17,14 @@ The project and its own plugins are scanned. Engine content is not.
 
 ## What it adds
 
-- Content Browser entries for every `.md` under a project content root.
-- A document editor with an outline, a preview, and the raw markdown, saving back to the file.
-- A Create Document entry in the right-click menu of any folder.
-- A Docs toolbar button opening a table of contents across every plugin in the project.
+- Content Browser entries for every `.md` under a project content root, with their own icon.
+- A documentation window: a table of contents across the project and every plugin, mirroring the
+  folders on disk, with the selected document rendered beside it.
+- Editing in that same window. A View / Edit switch shows the markdown source with a live
+  preview; Save writes the file back.
+- A Create Document entry in the right-click menu of any Content Browser folder.
+- A Docs toolbar button opening the window. Double-clicking a document in the Content Browser
+  opens it there too.
 
 ## Requirements
 
@@ -47,11 +51,15 @@ Whole roots are mounted rather than a reserved subfolder. `FContentBrowserFileDa
 filters files by registered extension while walking, so this is a directory scan that collects
 only markdown.
 
-Opening a document wraps it in a transient `UObject` so it can drive an `FAssetEditorToolkit`.
-That object is never saved to a package and never enters the asset registry. It exists while the
-editor is open, and saving writes the `.md`.
+The file type is registered under a real class, `UKhaosDocsDocument`, because the Content Browser
+only draws a class thumbnail for a type that resolves to a `UClass`. Nothing is loaded through
+it; it is a transient wrapper that holds a document's text while it is open, is never saved to a
+package and never enters the asset registry. Saving writes the `.md`.
+
+One widget, `SKhaosDocsDocumentEditor`, does all reading and editing, hosted in the right pane of
+the documentation window.
 
 ## Status
 
-Early. The renderer handles headings, emphasis, code, lists, quotes, rules and links. Tables and
-images are not done. See `Content/Docs/Authoring.md`.
+Early. The renderer handles headings, emphasis, code blocks, lists, quotes, rules and links, each
+as its own block widget. Tables and images are not done. See `Content/Docs/Authoring.md`.

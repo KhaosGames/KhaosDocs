@@ -32,17 +32,30 @@ documentation is yours to maintain.
 
 There is nothing to register. A plugin participates by having a `.md` file in one of those places.
 
-## Working with a document
+## The documentation window
 
-- Double-click opens the document editor: outline, preview, and raw markdown side by side.
-  Editing the markdown updates the preview. Save writes the file.
-- Right-click any folder and choose Create Document for a new `.md`. The name you type becomes
-  its first heading.
-- Rename, move, copy and delete act on the file.
+The Docs button on the level editor toolbar opens it, and so does double-clicking a document in
+the Content Browser. The left side is a table of contents: the project and each plugin, the
+folders under them, and the documents. The right side shows the selected document.
 
-Open Externally hands the file to whatever your system has registered for `.md`.
+Reading and editing happen in the same place. The View / Edit switch above the document turns
+the right side into the markdown source with a live preview beside it; Save writes the file,
+Reload re-reads it, and Ctrl+S works while editing. Switching to another document with unsaved
+edits asks first. Double-clicking a document in the table of contents starts editing it.
 
-If you edit a document outside the editor while it is also open inside, saving asks before
+An outline of the document's headings sits to the right of the page; clicking one scrolls to
+it. The header also offers Open Externally, which hands the file to whatever your system has
+registered for `.md`, a button that hides that outline, and a button at its far left that hides
+the table of contents for reading.
+
+Right-click a document in the table of contents to add it to Favorites, which are listed in
+their own group at the top. The same menu offers Show in Content Browser, Show in Explorer and
+Copy Path. The window reopens on the document you last had showing.
+
+In the Content Browser, right-click any folder and choose Create Document for a new `.md`. The
+name you type becomes its first heading. Rename, move, copy and delete act on the file.
+
+If you edit a document outside Unreal while it is also open inside, saving asks before
 overwriting.
 
 ## How it works
@@ -54,8 +67,10 @@ does the same for `.py` in the Python plugin.
 Directory scanning filters by extension as it walks, so mounting a whole content root costs a
 directory walk and finds nothing but markdown.
 
-Opening a document wraps it in a transient object so it can drive a normal asset editor. That
-object is never saved and never enters the asset registry. Saving writes the markdown file.
+Opening a document wraps it in a transient object. The Content Browser will only draw a class
+thumbnail for a type that resolves to a real class, so the file type is registered under that
+object's class; nothing is ever loaded through it, saved, or entered into the asset registry.
+Saving writes the markdown file.
 
 Files under `Content` that are not assets are skipped by the cook, so documentation does not reach
 a packaged build.

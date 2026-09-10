@@ -20,6 +20,8 @@ public class KhaosDocsEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"ApplicationCore",
+				"ContentBrowser",
 				"ContentBrowserData",
 				"ContentBrowserFileDataSource",
 				"InputCore",

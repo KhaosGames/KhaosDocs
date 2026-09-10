@@ -5,7 +5,9 @@
 #include "Brushes/SlateColorBrush.h"
 #include "Brushes/SlateImageBrush.h"
 #include "Brushes/SlateNoResource.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Interfaces/IPluginManager.h"
+#include "KhaosDocsDocument.h"
 #include "Misc/Paths.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateStyleMacros.h"
@@ -48,6 +50,11 @@ FName FKhaosDocsStyle::GetStyleSetName()
 	return StyleSetName;
 }
 
+const FTextBlockStyle& FKhaosDocsStyle::GetText(const FName InName)
+{
+	return Get().GetWidgetStyle<FTextBlockStyle>(InName);
+}
+
 TSharedRef<FSlateStyleSet> FKhaosDocsStyle::Create()
 {
 	TSharedRef<FSlateStyleSet> Style = MakeShared<FSlateStyleSet>(GetStyleSetName());
@@ -59,16 +66,24 @@ TSharedRef<FSlateStyleSet> FKhaosDocsStyle::Create()
 		const FVector2D Icon16x16(16.0f, 16.0f);
 		const FVector2D Icon64x64(64.0f, 64.0f);
 
-		// Every configured extension shares the one "Document" type, so a single pair of icons
-		// covers them all. Documents have no UClass, so the Content Browser falls back to looking
-		// these up by name across every registered style set - see
-		// SAssetThumbnail::UpdateThumbnailClass.
-		Style->Set("ClassThumbnail.Document", new IMAGE_BRUSH_SVG(TEXT("DocumentThumbnail"), Icon64x64));
-		Style->Set("ClassIcon.Document", new IMAGE_BRUSH_SVG(TEXT("Document"), Icon16x16));
+		// The Content Browser only shows a class thumbnail when the item's type resolves to a real
+		// UClass (SAssetThumbnail::GetClassThumbnailVisibility), so the file type is registered
+		// as UKhaosDocsDocument and the brushes are keyed by that class name. FSlateIconFinder
+		// searches every registered style set, so they can live here rather than in the app style.
+		const FString ClassName = UKhaosDocsDocument::StaticClass()->GetName();
+		Style->Set(*FString::Printf(TEXT("ClassThumbnail.%s"), *ClassName), new IMAGE_BRUSH_SVG(TEXT("DocumentThumbnail"), Icon64x64));
+		Style->Set(*FString::Printf(TEXT("ClassIcon.%s"), *ClassName), new IMAGE_BRUSH_SVG(TEXT("Document"), Icon16x16));
 
 		// Mark used by the toolbar button, the documentation tab and the table of contents rows.
 		Style->Set("KhaosDocs.Icon", new IMAGE_BRUSH_SVG(TEXT("Document"), Icon16x16));
+		Style->Set("KhaosDocs.Icon.Large", new IMAGE_BRUSH_SVG(TEXT("DocumentThumbnail"), Icon64x64));
+
+		// Pane toggles: a frame with the side being toggled filled in.
+		Style->Set("KhaosDocs.PanelLeft", new IMAGE_BRUSH_SVG(TEXT("PanelLeft"), Icon16x16));
+		Style->Set("KhaosDocs.PanelRight", new IMAGE_BRUSH_SVG(TEXT("PanelRight"), Icon16x16));
 	}
+
+	// -- Rendered document -----------------------------------------------------------------------
 
 	const FTextBlockStyle Body = FTextBlockStyle()
 		.SetFont(FCoreStyle::GetDefaultFontStyle("Regular", 10))
@@ -94,23 +109,30 @@ TSharedRef<FSlateStyleSet> FKhaosDocsStyle::Create()
 
 	Style->Set("Doc.CodeBlock", FTextBlockStyle(Body)
 		.SetFont(FCoreStyle::GetDefaultFontStyle("Mono", 9))
-		.SetColorAndOpacity(FStyleColors::AccentGreen));
+		.SetColorAndOpacity(FStyleColors::ForegroundHover));
 
 	Style->Set("Doc.Quote", FTextBlockStyle(Body)
 		.SetFont(FCoreStyle::GetDefaultFontStyle("Italic", 10))
 		.SetColorAndOpacity(FStyleColors::ForegroundHover));
 
+	Style->Set("Doc.ListMarker", FTextBlockStyle(Body)
+		.SetColorAndOpacity(FStyleColors::ForegroundHover));
+
 	Style->Set("Doc.H1", FTextBlockStyle(Body)
-		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 18))
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 20))
 		.SetColorAndOpacity(FStyleColors::White));
 
 	Style->Set("Doc.H2", FTextBlockStyle(Body)
-		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 15))
 		.SetColorAndOpacity(FStyleColors::White));
 
 	Style->Set("Doc.H3", FTextBlockStyle(Body)
-		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 11))
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 12))
 		.SetColorAndOpacity(FStyleColors::White));
+
+	Style->Set("Doc.H4", FTextBlockStyle(Body)
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+		.SetColorAndOpacity(FStyleColors::ForegroundHeader));
 
 	// Hyperlink style consumed by SRichTextBlock::HyperlinkDecorator. The underline button is
 	// deliberately chrome-free so links read as text rather than as buttons.
@@ -126,8 +148,44 @@ TSharedRef<FSlateStyleSet> FKhaosDocsStyle::Create()
 		.SetTextStyle(FTextBlockStyle(Body).SetColorAndOpacity(FStyleColors::AccentBlue))
 		.SetPadding(FMargin(0)));
 
-	// Backing panel for fenced code blocks.
-	Style->Set("Doc.CodeBlock.Background", new FSlateColorBrush(FStyleColors::Recessed));
+	// Documents render on the recessed panel colour, so blocks that need to stand out are lifted
+	// to the ordinary panel colour rather than pushed further back.
+	Style->Set("Doc.CodeBlock.Background", new FSlateRoundedBoxBrush(FStyleColors::Panel, 4.0f));
+	Style->Set("Doc.Quote.Bar", new FSlateRoundedBoxBrush(FStyleColors::Hover, 1.5f));
+	Style->Set("Doc.Separator", new FSlateColorBrush(FStyleColors::Hover));
+
+	// -- Window chrome ---------------------------------------------------------------------------
+
+	Style->Set("Doc.Title", FTextBlockStyle(Body)
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 13))
+		.SetColorAndOpacity(FStyleColors::White));
+
+	Style->Set("Doc.Subtitle", FTextBlockStyle(Body)
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+		.SetColorAndOpacity(FSlateColor::UseSubduedForeground()));
+
+	Style->Set("Doc.Empty.Title", FTextBlockStyle(Body)
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+		.SetColorAndOpacity(FStyleColors::ForegroundHover));
+
+	Style->Set("Doc.Empty.Body", FTextBlockStyle(Body)
+		.SetColorAndOpacity(FSlateColor::UseSubduedForeground()));
+
+	Style->Set("Doc.Tree.Owner", FTextBlockStyle(Body)
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+		.SetColorAndOpacity(FStyleColors::ForegroundHeader));
+
+	Style->Set("Doc.Tree.Folder", FTextBlockStyle(Body)
+		.SetColorAndOpacity(FStyleColors::ForegroundHeader));
+
+	Style->Set("Doc.Tree.Item", Body);
+
+	Style->Set("Doc.Tree.Secondary", FTextBlockStyle(Body)
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+		.SetColorAndOpacity(FSlateColor::UseSubduedForeground()));
+
+	Style->Set("Doc.Source", FTextBlockStyle(Body)
+		.SetFont(FCoreStyle::GetDefaultFontStyle("Mono", 9)));
 
 	return Style;
 }
