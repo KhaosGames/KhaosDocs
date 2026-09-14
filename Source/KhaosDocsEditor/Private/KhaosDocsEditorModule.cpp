@@ -240,7 +240,7 @@ void FKhaosDocsEditorModule::StartupModule()
 
 	// Activation needs the Content Browser data subsystem, which is an editor subsystem and so
 	// does not exist yet at module startup. PostEngineInit is the first point it is available.
-	FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FKhaosDocsEditorModule::ActivateDataSource);
+	FCoreDelegates::OnPostEngineInit.AddRaw(this, &FKhaosDocsEditorModule::ActivateDataSource);
 
 	FPackageName::OnContentPathMounted().AddRaw(this, &FKhaosDocsEditorModule::OnContentPathMounted);
 	FPackageName::OnContentPathDismounted().AddRaw(this, &FKhaosDocsEditorModule::OnContentPathDismounted);
@@ -264,7 +264,7 @@ void FKhaosDocsEditorModule::ShutdownModule()
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(KhaosDocsBrowserTabId);
 	}
 
-	FCoreDelegates::GetOnPostEngineInit().RemoveAll(this);
+	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
 	FPackageName::OnContentPathMounted().RemoveAll(this);
 	FPackageName::OnContentPathDismounted().RemoveAll(this);
 
