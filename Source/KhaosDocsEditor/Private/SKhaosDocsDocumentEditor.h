@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Framework/Text/SlateHyperlinkRun.h"
+#include "KhaosDocsDocument.h"
 #include "KhaosDocsMarkdown.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Widgets/SCompoundWidget.h"
@@ -13,7 +14,6 @@ class SMultiLineEditableTextBox;
 class SWidgetSwitcher;
 class STableViewBase;
 class ITableRow;
-class UKhaosDocsDocument;
 template <typename ItemType> class SListView;
 
 /** A link to another document was followed. The path is absolute and known to exist. */
