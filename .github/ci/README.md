@@ -109,7 +109,8 @@ build machine. Try it with `-WhatIf` first; it changes nothing and shows what it
 It checks the machine, creates a dedicated standard Windows account, shuts that account out of the
 other runners' folders and anything in `-ProtectPaths` (`C:\steamcmd` by default), lists any other
 top-level folders every local account can read so you can add them, then installs a verified copy
-of the GitHub Actions runner as a service in `C:\r\<name>` running as that account. It fetches the
+of the GitHub Actions runner as a service in `C:\rp\<name>` running as that account. It refuses a
+folder inside another runner's. It fetches the
 registration token with the GitHub CLI when that is signed in, or asks for it.
 
 The build machine needs:

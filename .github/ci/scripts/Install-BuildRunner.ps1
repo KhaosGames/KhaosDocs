@@ -15,7 +15,8 @@ Run once per runner, from an elevated Windows PowerShell on the build machine. I
      workspaces, logs and credentials) and to other sensitive folders, C:\steamcmd by default, and
      makes the new runner's own folder private to its account.
   4. Downloads the current GitHub Actions runner, checks its SHA-256 against the one GitHub
-     publishes, and unpacks it into a short folder, C:\r\<name>, since Unreal build paths nest deep.
+     publishes, and unpacks it into a short folder, C:\rp\<name>, since Unreal build paths nest
+     deep. It refuses a folder inside another runner's.
   5. Registers it with the ue-plugins label and installs it as a service running as that account.
 
 A runner for a public repository runs code from pull requests. Pair it with the organization
@@ -48,7 +49,9 @@ param(
 	[string[]]$EngineVersions = @('5.8'),
 	[string[]]$ProtectPaths = @('C:\steamcmd'),
 	[string[]]$Labels = @('ue-plugins'),
-	[string]$RunnerRoot = 'C:\r',
+	# Short, since Unreal build paths nest deep; "runners, plugins". Must not be inside another
+	# runner's folder.
+	[string]$RunnerRoot = 'C:\rp',
 	[string]$Account
 )
 
@@ -191,7 +194,15 @@ foreach ($Service in @(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions
 {
 	$Exe = $Service.PathName -replace '^"([^"]+)".*$', '$1'
 	$Root = Split-Path (Split-Path $Exe -Parent) -Parent
-	if ((Get-FullPath $Root).TrimEnd('\') -eq (Get-FullPath $RunnerDir).TrimEnd('\')) { continue }
+	$RootFull = (Get-FullPath $Root).TrimEnd('\')
+	$OwnFull = (Get-FullPath $RunnerDir).TrimEnd('\')
+	if ($RootFull -eq $OwnFull) { continue }
+
+	# Nested runner folders would share permissions and workspaces, which is what this avoids.
+	if ($OwnFull.StartsWith("$RootFull\", [StringComparison]::OrdinalIgnoreCase) -or $RootFull.StartsWith("$OwnFull\", [StringComparison]::OrdinalIgnoreCase))
+	{
+		throw "$RunnerDir and the folder of runner $($Service.Name), $Root, would be inside one another. Pass -RunnerRoot with a folder outside it, such as C:\rp."
+	}
 
 	Write-Host "  Runner $($Service.Name), as $($Service.StartName), in $Root"
 	$Protect.Add($Root)
@@ -365,7 +376,7 @@ if ($PSCmdlet.ShouldProcess($RunnerName, "Register with $Url and install as a se
 	Push-Location $RunnerDir
 	try
 	{
-		& .\config.cmd --unattended --url $Url --token $RegistrationToken --name $RunnerName --labels ($Labels -join ',') --work _work --runasservice --windowslogonaccount $QualifiedAccount --windowslogonpassword $Password --replace
+		& .\config.cmd --unattended --url $Url --token $RegistrationToken --name $RunnerName --labels ($Labels -join ',') --work _w --runasservice --windowslogonaccount $QualifiedAccount --windowslogonpassword $Password --replace
 		if ($LASTEXITCODE -ne 0) { throw "config.cmd failed with exit code $LASTEXITCODE." }
 	}
 	finally

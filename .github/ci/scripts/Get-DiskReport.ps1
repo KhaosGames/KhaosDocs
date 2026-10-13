@@ -188,7 +188,15 @@ foreach ($Service in @(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions
 {
 	$Root = Split-Path (Split-Path ($Service.PathName -replace '^"([^"]+)".*$', '$1') -Parent) -Parent
 	Add-Known "$Root\_diag" "Logs of runner $($Service.Name). Old ones are safe to delete."
+	# The work folder is set when the runner is configured: _work unless chosen otherwise.
 	$Work = Join-Path $Root '_work'
+	$Settings = Join-Path $Root '.runner'
+	if (Test-Path -LiteralPath $Settings)
+	{
+		$WorkFolder = ([IO.File]::ReadAllText($Settings) | ConvertFrom-Json).workFolder
+		if ($WorkFolder -and [IO.Path]::IsPathRooted($WorkFolder)) { $Work = $WorkFolder }
+		elseif ($WorkFolder) { $Work = Join-Path $Root $WorkFolder }
+	}
 	Add-Known "$Work\_temp" 'Runner temp, emptied after each job. Anything left is from a job that was killed.'
 	foreach ($Child in @(Get-ChildItem $Work -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '_*' }))
 	{
