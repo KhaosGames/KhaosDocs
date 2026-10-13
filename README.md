@@ -1,85 +1,30 @@
 # KhaosDocs
 
-Markdown documentation shown in the Unreal Content Browser, without turning it into assets.
+[![CI](https://github.com/KhaosSystems/KhaosDocs/actions/workflows/ci.yml/badge.svg)](https://github.com/KhaosSystems/KhaosDocs/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/KhaosSystems/KhaosDocs/badges/tests.json)](https://github.com/KhaosSystems/KhaosDocs/actions/workflows/ci.yml)
+![Unreal Engine](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/KhaosSystems/KhaosDocs/badges/unreal.json)
+![Lines of code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/KhaosSystems/KhaosDocs/badges/loc.json)
+[![Release](https://img.shields.io/github/v/release/KhaosSystems/KhaosDocs)](https://github.com/KhaosSystems/KhaosDocs/releases)
 
-Put a `.md` or `.txt` anywhere under a `Content` folder and it appears in the Content Browser, where
-it sits on disk. There is nothing to register. The files stay plain text, so they diff in git and
-open in any editor.
+Markdown documentation in the Unreal Content Browser. Any `.md` or `.txt` under a `Content` folder
+shows up where it sits on disk and opens in an in-editor viewer and editor, with a table of
+contents across the project and its plugins. The files stay plain text, so they diff in git.
 
-`.md` and `.txt` share a single Document type and are both rendered as markdown. New documents are
-created as `.md`.
-
-The documentation window additionally picks up a `Docs` folder beside the `.uplugin` and any
-markdown at the plugin root, such as `README.md`. Those cannot go in the Content Browser — a mount
-must be a directory inside a content root — but they open in the same editor.
-
-The project and its own plugins are scanned. Engine content is not.
-
-## What it adds
-
-- Content Browser entries for every `.md` under a project content root, with their own icon.
-- A documentation window: a table of contents across the project and every plugin, mirroring the
-  folders on disk, with the selected document rendered beside it.
-- Editing in that same window. A View / Edit switch shows the markdown source with a live
-  preview; Save writes the file back.
-- A Create Document entry in the right-click menu of any Content Browser folder.
-- A Docs toolbar button opening the window. Double-clicking a document in the Content Browser
-  opens it there too.
-
-## Requirements
-
-Unreal Engine 5.8, and the engine's `ContentBrowserFileDataSource` plugin, which this one enables
-as a dependency.
-
-## Installing
+## Install
 
 ```bash
 git submodule add -b release https://github.com/KhaosSystems/KhaosDocs Plugins/KhaosDocs
 ```
 
-Regenerate project files and build. The plugin is editor-only and contributes nothing to a
-packaged build.
+Unreal Engine 5.8. Editor-only; it adds nothing to a packaged game.
 
-The `release` branch only ever holds released versions, each one built and tested first. Track it,
-and Dependabot can open a pull request in your project whenever a new version comes out; see
-[.github/ci](.github/ci/README.md#using-a-plugin-in-a-game).
+## Docs
 
-## How it works
-
-The UE5 Content Browser accepts data sources beyond the asset registry. This plugin registers a
-`UContentBrowserFileDataSource` for the `md` extension, mounts each project content root into it,
-then activates it — registering alone leaves a data source available but inert. The engine uses
-the same mechanism for `.py` in `PythonScriptPlugin` and `.po` in `PortableObjectFileDataSource`.
-
-Whole roots are mounted rather than a reserved subfolder. `FContentBrowserFileDataDiscovery`
-filters files by registered extension while walking, so this is a directory scan that collects
-only markdown.
-
-The file type is registered under a real class, `UKhaosDocsDocument`, because the Content Browser
-only draws a class thumbnail for a type that resolves to a `UClass`. Nothing is loaded through
-it; it is a transient wrapper that holds a document's text while it is open, is never saved to a
-package and never enters the asset registry. Saving writes the `.md`.
-
-One widget, `SKhaosDocsDocumentEditor`, does all reading and editing, hosted in the right pane of
-the documentation window.
+[KhaosDocs](Content/Docs/KhaosDocs.md) and [Authoring](Content/Docs/Authoring.md), which also open
+in the editor's documentation window.
 
 ## Development
 
-Tests are automation specs under `Source/KhaosDocsEditor/Private/Tests`, named `KhaosDocs.*`.
-Run them from Session Frontend in the editor, or headless the way CI does.
-
-CI checks every push against Fab's requirements, compiles the plugin against the Launcher build of
-each supported engine and runs the tests; see [.github/ci](.github/ci/README.md). To release,
-push a version tag:
-
-```bash
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-The run's summary then has the links and notes to paste into the Fab publisher portal.
-
-## Status
-
-Early. The renderer handles headings, emphasis, code blocks, lists, quotes, rules and links, each
-as its own block widget. Tables and images are not done. See `Content/Docs/Authoring.md`.
+Tests are automation specs in `Source/KhaosDocsEditor/Private/Tests`. CI and releases run on
+[KhaosSystems/unreal-actions](https://github.com/KhaosSystems/unreal-actions); push a `vX.Y.Z` tag
+to release.

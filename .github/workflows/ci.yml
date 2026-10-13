@@ -1,6 +1,4 @@
-# Validates, builds and tests the plugin on every push and pull request, and turns a vX.Y.Z tag
-# into a release ready to submit to Fab. The pipeline is unreal-plugin.yml, with its scripts in
-# .github/ci; see .github/ci/README.md.
+# Build, test and release with KhaosSystems/unreal-actions. Push a vX.Y.Z tag to release.
 name: CI
 
 on:
@@ -12,27 +10,14 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A newer push supersedes a branch build; a release always runs to the end.
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   plugin:
-    uses: ./.github/workflows/unreal-plugin.yml
+    uses: KhaosSystems/unreal-actions/.github/workflows/unreal-plugin.yml@v1
     permissions:
-      contents: write # the release job publishes the GitHub release
+      contents: write # releases and badges
     with:
       engine-versions: '["5.8"]'
     secrets:
       discord-webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-  lint-workflows:
-    name: Lint workflows
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - name: actionlint
-        uses: docker://rhysd/actionlint:1.7.7
-        with:
-          args: -color
