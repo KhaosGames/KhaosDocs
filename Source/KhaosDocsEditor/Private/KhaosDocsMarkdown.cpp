@@ -364,12 +364,18 @@ FDocument Parse(const FString& InMarkdown)
 			{
 				FString HeadingText = Trimmed.RightChop(Level).TrimStartAndEnd();
 
-				// Optional closing hashes: "## Title ##".
-				while (HeadingText.EndsWith(TEXT("#")))
+				// Optional closing hashes: "## Title ##". They must be set off by a space, so the
+				// hash in "C#" stays part of the text.
+				int32 ClosingStart = HeadingText.Len();
+				while (ClosingStart > 0 && HeadingText[ClosingStart - 1] == TEXT('#'))
 				{
-					HeadingText.LeftChopInline(1);
+					--ClosingStart;
 				}
-				HeadingText.TrimEndInline();
+				if (ClosingStart < HeadingText.Len() && (ClosingStart == 0 || HeadingText[ClosingStart - 1] == TEXT(' ')))
+				{
+					HeadingText.LeftInline(ClosingStart);
+					HeadingText.TrimEndInline();
+				}
 
 				FHeading& Heading = Document.Headings.AddDefaulted_GetRef();
 				Heading.Level = Level;
@@ -418,7 +424,7 @@ FDocument Parse(const FString& InMarkdown)
 			Block.Type = EBlockType::ListItem;
 			Block.Level = MeasureIndent(Line) / 2;
 			Block.RichText = ParseInline(Trimmed.RightChop(2).TrimStart());
-			Push(MoveTemp(Block));
+			Open = &Push(MoveTemp(Block));
 			continue;
 		}
 
@@ -439,7 +445,7 @@ FDocument Parse(const FString& InMarkdown)
 				Block.Level = MeasureIndent(Line) / 2;
 				Block.Marker = Trimmed.Left(DigitCount) + TEXT(".");
 				Block.RichText = ParseInline(Trimmed.RightChop(DigitCount + 2).TrimStart());
-				Push(MoveTemp(Block));
+				Open = &Push(MoveTemp(Block));
 				continue;
 			}
 		}
