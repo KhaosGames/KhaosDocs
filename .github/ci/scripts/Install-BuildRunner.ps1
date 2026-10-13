@@ -33,6 +33,15 @@ What the runner is for, in a few lowercase letters, such as unreal. It names the
 (<computer>-<name>), its account (gh-<name>) and its folder (C:\rp\<name>). Defaults to the
 repository or organization name.
 
+.PARAMETER RunnerName
+The name GitHub shows for the runner, such as gh-runner-windows-unreal-01. Defaults to
+<computer>-<name>.
+
+.PARAMETER Reinstall
+Replace a runner already set up in this folder: unregister it from GitHub, remove its service and
+delete its folder, workspace and caches included, then install afresh. Use it to rename a runner,
+since GitHub cannot rename one in place. The account stays, with a new password.
+
 .PARAMETER RunnerGroup
 For an organization runner: the runner group to join, which decides which repositories can use
 it. A group for public plugins needs "Allow public repositories" on and only those repositories
@@ -50,7 +59,10 @@ protected. The script lists the top-level folders the account could otherwise re
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs
 
 .EXAMPLE
-.\Install-BuildRunner.ps1 -Target KhaosSystems -Name unreal -RunnerGroup on-prem-unreal
+.\Install-BuildRunner.ps1 -Target KhaosSystems -Name unreal -RunnerGroup on-prem-unreal -RunnerName gh-runner-windows-unreal-01
+
+.EXAMPLE
+.\Install-BuildRunner.ps1 -Target KhaosSystems -Name unreal -RunnerGroup on-prem-unreal -RunnerName gh-runner-windows-unreal-01 -Reinstall
 
 .EXAMPLE
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs -ProtectPaths C:\steamcmd, C:\Dev -WhatIf
@@ -59,7 +71,9 @@ protected. The script lists the top-level folders the account could otherwise re
 param(
 	[Parameter(Mandatory)][string]$Target,
 	[string]$Name,
+	[string]$RunnerName,
 	[string]$RunnerGroup,
+	[switch]$Reinstall,
 	[string]$RegistrationToken,
 	[string[]]$EngineVersions = @('5.8'),
 	[string[]]$ProtectPaths = @('C:\steamcmd'),
@@ -145,18 +159,45 @@ if (-not $Account)
 	if ($Account.Length -gt 20) { $Account = $Account.Substring(0, 20) }
 }
 $QualifiedAccount = "$env:COMPUTERNAME\$Account"
-$RunnerName = "$env:COMPUTERNAME-$ShortName"
+if ($RunnerName)
+{
+	if ($RunnerName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') { throw "-RunnerName should be up to 64 letters, digits, dots, dashes and underscores, such as gh-runner-windows-unreal-01." }
+}
+else
+{
+	$RunnerName = "$env:COMPUTERNAME-$ShortName"
+}
 $RunnerDir = Join-Paths $RunnerRoot $ShortName
 $Url = "https://github.com/$Target"
 if ($IsRepository)
 {
-	$TokenEndpoint = "repos/$Target/actions/runners/registration-token"
-	$TokenPage = "$Url/settings/actions/runners/new"
+	$ApiScope = "repos/$Target"
+	$RunnersPage = "$Url/settings/actions/runners"
 }
 else
 {
-	$TokenEndpoint = "orgs/$Target/actions/runners/registration-token"
-	$TokenPage = "https://github.com/organizations/$Target/settings/actions/runners/new"
+	$ApiScope = "orgs/$Target"
+	$RunnersPage = "https://github.com/organizations/$Target/settings/actions/runners"
+}
+$TokenEndpoint = "$ApiScope/actions/runners/registration-token"
+$TokenPage = "$RunnersPage/new"
+
+<# A token for registering or removing a runner: from the GitHub CLI when signed in, or asked for. #>
+function Get-RunnerToken([string]$Kind, [string]$Instructions)
+{
+	if (Get-Command gh -ErrorAction SilentlyContinue)
+	{
+		$Result = Invoke-NativeQuiet gh @('api', '-X', 'POST', "$ApiScope/actions/runners/$Kind-token", '--jq', '.token')
+		if ($Result.ExitCode -eq 0 -and $Result.Output) { return ([string]$Result.Output[0]).Trim() }
+	}
+	Write-Host ''
+	Write-Host $Instructions
+	$Secure = Read-Host "$((Get-Culture).TextInfo.ToTitleCase($Kind)) token" -AsSecureString
+	$Pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
+	try { $Token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Pointer) }
+	finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Pointer) }
+	if (-not $Token) { throw "No $Kind token." }
+	return $Token
 }
 
 $Principal = New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -165,9 +206,10 @@ if (-not $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 	throw 'Run this from an elevated PowerShell (Run as administrator).'
 }
 
-if (Test-Path -LiteralPath (Join-Paths $RunnerDir '.runner'))
+$Existing = Test-Path -LiteralPath (Join-Paths $RunnerDir '.runner')
+if ($Existing -and -not $Reinstall)
 {
-	throw "A runner is already configured in $RunnerDir. Remove it first: in an elevated prompt run '$RunnerDir\config.cmd remove', delete the folder, and remove the runner from $Url/settings/actions/runners if it is still listed."
+	throw "A runner is already set up in $RunnerDir. Run again with -Reinstall to replace it, for example to rename it; that unregisters it, removes its service and deletes the folder first."
 }
 
 $Joining = ''
@@ -278,23 +320,16 @@ if ($Readable.Count -gt 0)
 
 # 3. Registration token, before anything changes -------------------------------------------------
 
-if (-not $RegistrationToken -and -not $WhatIfPreference)
+if (-not $WhatIfPreference)
 {
-	if (Get-Command gh -ErrorAction SilentlyContinue)
-	{
-		$Result = Invoke-NativeQuiet gh @('api', '-X', 'POST', $TokenEndpoint, '--jq', '.token')
-		if ($Result.ExitCode -eq 0 -and $Result.Output) { $RegistrationToken = ([string]$Result.Output[0]).Trim() }
-	}
 	if (-not $RegistrationToken)
 	{
-		Write-Host ''
-		Write-Host "Open $TokenPage and copy the token from the configure command (the value after --token)."
-		$SecureToken = Read-Host 'Registration token' -AsSecureString
-		$Pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureToken)
-		try { $RegistrationToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Pointer) }
-		finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Pointer) }
+		$RegistrationToken = Get-RunnerToken 'registration' "Open $TokenPage and copy the token from the configure command (the value after --token)."
 	}
-	if (-not $RegistrationToken) { throw 'No registration token.' }
+	if ($Existing)
+	{
+		$RemovalToken = Get-RunnerToken 'remove' "Open $RunnersPage, choose the runner in $RunnerDir, then Remove, and copy the token from the command shown (the value after --token)."
+	}
 }
 
 # 4. Account -------------------------------------------------------------------------------------
@@ -347,6 +382,17 @@ Write-Step 'Folder access'
 
 foreach ($Path in $Protect)
 {
+	# Already done on an earlier run: applying it again would walk the whole tree again.
+	$Denied = @((Get-Acl -LiteralPath $Path).Access | Where-Object {
+		$_.AccessControlType -eq 'Deny' -and $_.IdentityReference.Value -eq $QualifiedAccount -and
+		($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq [Security.AccessControl.FileSystemRights]::FullControl
+	})
+	if ($Denied.Count -gt 0)
+	{
+		Write-Host "  $Path is already denied to $QualifiedAccount."
+		continue
+	}
+
 	# Inherited down the tree, so a large workspace takes a while. Deny wins over any allow.
 	if ($PSCmdlet.ShouldProcess($Path, "Deny $QualifiedAccount all access"))
 	{
@@ -354,6 +400,25 @@ foreach ($Path in $Protect)
 		& icacls.exe $Path /deny "${QualifiedAccount}:(OI)(CI)F" /C /Q | Out-Null
 		if ($LASTEXITCODE -ne 0) { Write-Problem "icacls could not fully protect $Path (exit $LASTEXITCODE). Check it by hand." }
 	}
+}
+
+if ($Existing -and $PSCmdlet.ShouldProcess($RunnerDir, 'Unregister the runner there, remove its service and delete the folder'))
+{
+	Push-Location $RunnerDir
+	try
+	{
+		# Run elevated, this also stops and uninstalls the service.
+		& .\config.cmd remove --token $RemovalToken
+		if ($LASTEXITCODE -ne 0) { throw "Removing the existing runner failed (exit $LASTEXITCODE). Nothing else was changed in $RunnerDir." }
+	}
+	finally
+	{
+		Pop-Location
+	}
+	# rd with \\?\ copes with workspace paths past 260 characters, which Remove-Item does not.
+	& cmd.exe /c rd /s /q "\\?\$RunnerDir"
+	if (Test-Path -LiteralPath $RunnerDir) { throw "Could not delete $RunnerDir; close anything using it and run again." }
+	Write-Host "  Removed the previous runner and deleted $RunnerDir."
 }
 
 if ($PSCmdlet.ShouldProcess($RunnerDir, "Create, readable only by $QualifiedAccount, SYSTEM and Administrators"))
@@ -414,8 +479,11 @@ if ($PSCmdlet.ShouldProcess($RunnerName, "Register with $Url and install as a se
 
 	$Service = Get-Service | Where-Object { $_.Name -like "actions.runner.*.$RunnerName" } | Select-Object -First 1
 	if (-not $Service) { throw 'The runner service was not installed.' }
+	# Starts with Windows, without anyone signing in.
+	if ($Service.StartType -ne 'Automatic') { Set-Service -Name $Service.Name -StartupType Automatic }
 	if ($Service.Status -ne 'Running') { Start-Service -Name $Service.Name }
-	Write-Host "  Service $($Service.Name) is $((Get-Service -Name $Service.Name).Status)."
+	$Service = Get-Service -Name $Service.Name
+	Write-Host "  Service $($Service.Name) is $($Service.Status), starting $($Service.StartType.ToString().ToLowerInvariant()) with Windows."
 }
 
 # Done -------------------------------------------------------------------------------------------
