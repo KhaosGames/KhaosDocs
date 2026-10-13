@@ -217,10 +217,13 @@ if (-not $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 	throw 'Run this from an elevated PowerShell (Run as administrator).'
 }
 
-$Existing = Test-Path -LiteralPath (Join-Paths $RunnerDir '.runner')
+# A runner installed here, registered or not. A runner removed on GitHub deletes its own .runner
+# file when it notices, so the program files are what show an install.
+$Registered = Test-Path -LiteralPath (Join-Paths $RunnerDir '.runner')
+$Existing = $Registered -or (Test-Path -LiteralPath (Join-Paths $RunnerDir 'config.cmd')) -or (Test-Path -LiteralPath (Join-Paths $RunnerDir 'bin'))
 if ($Existing -and -not $Reinstall)
 {
-	throw "A runner is already set up in $RunnerDir. Run again with -Reinstall to replace it, for example to rename it; that unregisters it, removes its service and deletes the folder first."
+	throw "A runner is already installed in $RunnerDir. Run again with -Reinstall to replace it, for example to rename it; that unregisters it, removes its service and deletes the folder first."
 }
 
 $Joining = ''
@@ -369,7 +372,7 @@ if (-not $WhatIfPreference)
 	{
 		$RegistrationToken = Get-RunnerToken 'registration' "Open $TokenPage and copy the token from the configure command (the value after --token)."
 	}
-	if ($Existing)
+	if ($Registered)
 	{
 		$RemovalToken = Get-RunnerToken 'remove' "Open $RunnersPage, choose the runner in $RunnerDir, then Remove, and copy the token from the command shown (the value after --token). If it is already gone from that page, for example after Force remove, press Enter." -AllowEmpty
 	}
@@ -454,7 +457,7 @@ if ($Existing -and $PSCmdlet.ShouldProcess($RunnerDir, 'Unregister the runner th
 		}
 		else
 		{
-			Write-Host '  Already removed on GitHub; cleaning up here only.'
+			Write-Host '  Not registered with GitHub any more; cleaning up here only.'
 		}
 	}
 	finally
