@@ -26,7 +26,11 @@ param(
 	[Parameter(Mandatory)][string]$WorkDir,
 
 	[string]$TargetPlatforms = 'Win64',
-	[switch]$StrictIncludes
+	[switch]$StrictIncludes,
+
+	# Where UnrealBuildTool may keep anything, instead of the machine-wide defaults other projects
+	# on the build machine use. Defaults to a folder in WorkDir.
+	[string]$CacheDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,9 +38,13 @@ Import-Module (Join-Path $PSScriptRoot 'KhaosPluginCI.psm1') -Force
 
 $EngineRoot = Find-UnrealEngine $EngineVersion
 $RunUAT = Join-Paths $EngineRoot 'Engine' 'Build' 'BatchFiles' 'RunUAT.bat'
-Write-Host "Unreal Engine $EngineVersion at $EngineRoot"
+Write-Host "Unreal Engine $((Get-UnrealEngineBuild $EngineRoot).Description) at $EngineRoot"
 
 $WorkDir = Get-FullPath $WorkDir
+if (-not $CacheDir) { $CacheDir = Join-Paths $WorkDir 'cache' }
+$Cache = Get-PluginCache $CacheDir
+Set-UnrealBuildToolIsolation $Cache
+Write-Host "UnrealBuildTool caches in $($Cache.Root), local executor only"
 $SourceRoot = Join-Paths $WorkDir 'src'
 $LogDir = Join-Paths $WorkDir 'logs'
 Expand-PluginZip -ZipPath (Get-FullPath $PackageZip) -Destination $SourceRoot

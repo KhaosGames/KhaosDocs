@@ -203,10 +203,14 @@ function Invoke-NativeQuiet
 Find an installed engine by version, e.g. '5.8'.
 
 .DESCRIPTION
-Looks, in order, at the UE_ROOT_<major>_<minor> environment variable, the Epic Games Launcher's
-install list, the registry key the launcher writes, and the default install folder. The launcher
-list comes before the registry because the registry key is not always written; a 5.8 launcher
-install was seen without one.
+If UE_ROOT_<major>_<minor> is set, that is the engine, and it is an error for it to be anything
+else; an explicit setting never quietly falls back to another install. Otherwise looks, in order,
+at the Epic Games Launcher's install list, the registry key the launcher writes, and the default
+install folder. The launcher list comes before the registry because the registry key is not
+always written; a 5.8 launcher install was seen without one.
+
+A missing engine is an error, not a warning: Fab compiles the plugin for every engine version on
+the listing, so one that cannot be built here is one that would ship untested.
 #>
 function Find-UnrealEngine
 {
@@ -217,11 +221,21 @@ function Find-UnrealEngine
 		throw "Engine version must look like '5.8', got '$Version'."
 	}
 
-	$Candidates = New-Object System.Collections.Generic.List[string]
-
 	$OverrideName = 'UE_ROOT_' + $Version.Replace('.', '_')
 	$Override = [Environment]::GetEnvironmentVariable($OverrideName)
-	if ($Override) { $Candidates.Add($Override) }
+	if ($Override)
+	{
+		$Problem = Test-UnrealEngineRoot $Override $Version
+		if ($Problem)
+		{
+			$Message = "$OverrideName is set to '$Override', but $Problem Fix or unset it."
+			Write-CiAnnotation error $Message -Title "Unreal Engine $Version not found"
+			throw $Message
+		}
+		return (Get-FullPath $Override).TrimEnd('\')
+	}
+
+	$Candidates = New-Object System.Collections.Generic.List[string]
 
 	$LauncherList = Join-Paths $env:ProgramData 'Epic' 'UnrealEngineLauncher' 'LauncherInstalled.dat'
 	if (Test-Path -LiteralPath $LauncherList)
@@ -248,21 +262,166 @@ function Find-UnrealEngine
 	foreach ($Root in $Candidates)
 	{
 		if (-not $Root) { continue }
-		if (-not (Test-Path -LiteralPath (Join-Paths $Root 'Engine' 'Build' 'BatchFiles' 'RunUAT.bat'))) { continue }
-
-		# Guard against an override or a stale entry pointing at the wrong engine.
-		$BuildVersion = [IO.File]::ReadAllText((Join-Paths $Root 'Engine' 'Build' 'Build.version')) | ConvertFrom-Json
-		$Found = "$($BuildVersion.MajorVersion).$($BuildVersion.MinorVersion)"
-		if ($Found -ne $Version)
-		{
-			Write-CiAnnotation warning "Skipping $Root, it is Unreal Engine $Found, not $Version."
-			continue
-		}
-
+		# A stale launcher entry or registry key can point at a removed or different engine.
+		if (Test-UnrealEngineRoot $Root $Version) { continue }
 		return (Get-FullPath $Root).TrimEnd('\')
 	}
 
-	throw "Unreal Engine $Version is not installed. Install it from the Epic Games Launcher, or set $OverrideName to its root folder. Looked in: $($Candidates -join '; ')"
+	$Machine = [Environment]::MachineName
+	$Message = "Unreal Engine $Version is not installed on $Machine. Install it from the Epic Games Launcher, or set $OverrideName to its root folder. Looked in: $(($Candidates | Select-Object -Unique) -join '; ')"
+	Write-CiAnnotation error $Message -Title "Unreal Engine $Version not found"
+	throw $Message
+}
+
+<#
+.SYNOPSIS
+Check that a folder is an engine of the given version.
+.OUTPUTS
+Nothing if it is, otherwise what is wrong, as the end of a sentence.
+#>
+function Test-UnrealEngineRoot
+{
+	param(
+		[Parameter(Mandatory)][string]$Root,
+		[Parameter(Mandatory)][string]$Version
+	)
+
+	if (-not (Test-Path -LiteralPath (Join-Paths $Root 'Engine' 'Build' 'BatchFiles' 'RunUAT.bat')))
+	{
+		return 'there is no engine there (no Engine\Build\BatchFiles\RunUAT.bat).'
+	}
+
+	$Found = (Get-UnrealEngineBuild $Root).Version
+	if ($Found -ne $Version)
+	{
+		return "that is Unreal Engine $Found."
+	}
+	return $null
+}
+
+<#
+.SYNOPSIS
+Read an engine's version from Engine/Build/Build.version.
+.OUTPUTS
+Version (major.minor), and Description such as '5.8.2, changelist 56702186, ++UE5+Release-5.8'.
+#>
+function Get-UnrealEngineBuild
+{
+	param([Parameter(Mandatory)][string]$Root)
+
+	$Path = Join-Paths $Root 'Engine' 'Build' 'Build.version'
+	if (-not (Test-Path -LiteralPath $Path))
+	{
+		return [pscustomobject]@{ Version = 'unknown'; Description = 'unknown version' }
+	}
+
+	$Build = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+	return [pscustomobject]@{
+		Version = "$($Build.MajorVersion).$($Build.MinorVersion)"
+		Description = "$($Build.MajorVersion).$($Build.MinorVersion).$($Build.PatchVersion), changelist $($Build.Changelist), $($Build.BranchName)"
+	}
+}
+
+#endregion
+
+#region Caches
+
+# Every cache the engine would otherwise keep in a per-user or machine-wide place is moved into one
+# folder the caller owns. The build machine also builds other projects, whose caches must not be
+# touched, and the defaults are shared:
+#
+#   UnrealBuildAccelerator  C:\ProgramData\Epic\UnrealBuildAccelerator for every engine on the
+#                           machine, size capped (40 GB), so other builds' entries get evicted.
+#                           Remote executors and UBA cache servers may be set up for other projects.
+#   Zen                     One local server on port 8558 with a version-agnostic data folder in
+#                           %LOCALAPPDATA%. An editor that wants a different data folder or version
+#                           shuts the running server down, under whatever else was using it.
+#   Derived data cache      %LOCALAPPDATA%\UnrealEngine\Common\DerivedDataCache for Launcher
+#                           engines, plus any shared or cloud cache set up by environment variable.
+
+<#
+.SYNOPSIS
+Create the cache folders for one engine version and describe them.
+.OUTPUTS
+Root, Ddc, Zen and Uba paths, and ZenPort, a port derived from the root so that two cache folders
+on one machine do not collide and none uses the default 8558.
+#>
+function Get-PluginCache
+{
+	param([Parameter(Mandatory)][string]$CacheDir)
+
+	$Root = (Get-FullPath $CacheDir).TrimEnd('\')
+	$Cache = [pscustomobject]@{
+		Root = $Root
+		Ddc = Join-Paths $Root 'DerivedDataCache'
+		Zen = Join-Paths $Root 'Zen'
+		Uba = Join-Paths $Root 'UnrealBuildAccelerator'
+		ZenPort = 0
+	}
+	foreach ($Path in @($Cache.Ddc, $Cache.Zen, $Cache.Uba))
+	{
+		New-Item -ItemType Directory -Path $Path -Force | Out-Null
+	}
+
+	$Sha = [Security.Cryptography.SHA256]::Create()
+	try { $Hash = $Sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Root.ToLowerInvariant())) } finally { $Sha.Dispose() }
+	$Cache.ZenPort = 8600 + ((([int]$Hash[0]) * 256 + [int]$Hash[1]) % 400)
+	return $Cache
+}
+
+<#
+.SYNOPSIS
+Point UnrealBuildTool at the given cache for the rest of this process and its children.
+
+.DESCRIPTION
+UnrealBuildTool turns UnrealBuildTool_<Section>__<Field> environment variables into its
+highest-priority BuildConfiguration.xml, which is the only way to configure the UnrealBuildTool
+that BuildPlugin runs.
+
+Since 5.8 the UBA local executor is UnrealBuildTool's local executor and cannot be turned off, so
+its root, where it keeps its store, is moved into the cache folder. Everything that would reach
+beyond this machine or into another project's setup is off: remote UBA and Horde, UBA cache
+servers, XGE, FASTBuild and SNDBS.
+#>
+function Set-UnrealBuildToolIsolation
+{
+	param([Parameter(Mandatory)]$Cache)
+
+	$Settings = [ordered]@{
+		'UnrealBuildAccelerator__RootDir' = $Cache.Uba
+		'UnrealBuildAccelerator__ForceNoCache' = 'true'
+		'UnrealBuildAccelerator__bDisableHorde' = 'true'
+		'BuildConfiguration__bAllowUBAExecutor' = 'false'
+		'BuildConfiguration__bAllowXGE' = 'false'
+		'BuildConfiguration__bAllowFASTBuild' = 'false'
+		'BuildConfiguration__bAllowSNDBS' = 'false'
+	}
+	foreach ($Name in $Settings.Keys)
+	{
+		[Environment]::SetEnvironmentVariable("UnrealBuildTool_$Name", $Settings[$Name], 'Process')
+	}
+}
+
+<#
+.SYNOPSIS
+Editor command line arguments that keep its caches in the given folder.
+
+.DESCRIPTION
+The derived data cache is limited to one local file store in the folder. Leaving the Zen, shared
+and cloud stores out of the graph means no Zen server is started at all, which matters beyond the
+data folder: starting one can shut down another, and updates Zen's per-user install. Zen's data
+folder and port are still pointed at the folder in case something starts it regardless.
+#>
+function Get-EditorCacheArguments
+{
+	param([Parameter(Mandatory)]$Cache)
+
+	return @(
+		'-DDC=(Local)'
+		"-LocalDataCachePath=`"$($Cache.Ddc)`""
+		"-ZenDataPath=`"$($Cache.Zen)`""
+		"-ini:Engine:[Zen.AutoLaunch]:DesiredPort=$($Cache.ZenPort)"
+	)
 }
 
 #endregion

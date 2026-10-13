@@ -24,7 +24,11 @@ param(
 	# name tests '<PluginName>.<Area>.<Case>'.
 	[string]$Filter,
 
-	[int]$TimeoutMinutes = 30
+	[int]$TimeoutMinutes = 30,
+
+	# Where the editor keeps its derived data cache, instead of the per-user defaults other
+	# projects on the build machine use. Defaults to a folder in WorkDir.
+	[string]$CacheDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +43,8 @@ $PluginName = $Descriptor.Name
 if (-not $Filter) { $Filter = $PluginName }
 
 $WorkDir = Get-FullPath $WorkDir
+if (-not $CacheDir) { $CacheDir = Join-Paths $WorkDir 'cache' }
+$Cache = Get-PluginCache $CacheDir
 $HostDir = Join-Paths $WorkDir 'Host'
 $ReportDir = Join-Paths $WorkDir 'report'
 $LogDir = Join-Paths $WorkDir 'logs'
@@ -65,7 +71,7 @@ $Arguments = @(
 	"-ReportExportPath=`"$ReportDir`""
 	"-abslog=`"$EditorLog`""
 	'-unattended', '-nopause', '-nosplash', '-nullrhi', '-nosound', '-NoLoadingScreen', '-buildmachine'
-) -join ' '
+) + (Get-EditorCacheArguments $Cache) -join ' '
 
 Start-CiGroup "Automation tests matching '$Filter' on UE $EngineVersion"
 Write-Host "> `"$Editor`" $Arguments" -ForegroundColor DarkGray

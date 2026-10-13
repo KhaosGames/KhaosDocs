@@ -259,6 +259,62 @@ try
 	Check 'keeps warnings as warnings' (@($Annotations | Where-Object { $_ -like '::warning file=Source/SampleEditor/Private/B.cpp,line=3,*' }).Count -eq 1)
 	Check 'pins engine-header errors on the plugin line that caused them' (@($Annotations | Where-Object { $_ -like '::error file=Source/SampleEditor/Private/C.h,line=16,*undefined type*' }).Count -eq 1)
 
+	Write-Host 'Engine lookup'
+	$FakeEngine = Join-Paths $Temp 'UE_9.9'
+	New-TestFile "$FakeEngine\Engine\Build\BatchFiles\RunUAT.bat" '@echo off'
+	New-TestFile "$FakeEngine\Engine\Build\Build.version" '{ "MajorVersion": 9, "MinorVersion": 9, "PatchVersion": 1, "Changelist": 123, "BranchName": "++UE9+Release-9.9" }'
+	try
+	{
+		$env:UE_ROOT_9_9 = $FakeEngine
+		Check 'an override that is the right engine is used' ((Find-UnrealEngine '9.9') -eq $FakeEngine)
+		Check 'the build is described exactly' ((Get-UnrealEngineBuild $FakeEngine).Description -eq '9.9.1, changelist 123, ++UE9+Release-9.9')
+
+		$env:UE_ROOT_9_9 = Join-Paths $Temp 'nowhere'
+		$Annotations = Get-Annotations { try { Find-UnrealEngine '9.9' | Out-Null } catch { $script:Caught = $_.Exception.Message } }
+		Check 'an override pointing nowhere is an error, not a fallback' ($script:Caught -like 'UE_ROOT_9_9 is set to*no engine there*' -and @($Annotations | Where-Object { $_ -like '::error*Unreal Engine 9.9 not found*' }).Count -eq 1) "$script:Caught"
+
+		New-TestFile "$FakeEngine\Engine\Build\Build.version" '{ "MajorVersion": 9, "MinorVersion": 8, "PatchVersion": 0, "Changelist": 1, "BranchName": "x" }'
+		$env:UE_ROOT_9_9 = $FakeEngine
+		$script:Caught = $null
+		$null = Get-Annotations { try { Find-UnrealEngine '9.9' | Out-Null } catch { $script:Caught = $_.Exception.Message } }
+		Check 'an override pointing at another version is an error' ($script:Caught -like '*that is Unreal Engine 9.8*') "$script:Caught"
+
+		Remove-Item Env:\UE_ROOT_9_9
+		$script:Caught = $null
+		$Annotations = Get-Annotations { try { Find-UnrealEngine '9.9' | Out-Null } catch { $script:Caught = $_.Exception.Message } }
+		Check 'a missing engine is an error that says how to fix it' ($script:Caught -like 'Unreal Engine 9.9 is not installed on*Epic Games Launcher*UE_ROOT_9_9*' -and $Annotations.Count -eq 1) "$script:Caught"
+	}
+	finally
+	{
+		Remove-Item Env:\UE_ROOT_9_9 -ErrorAction SilentlyContinue
+	}
+
+	Write-Host 'Cache isolation'
+	$Cache = Get-PluginCache (Join-Paths $Temp 'cache\UE5.8')
+	Check 'cache folders are created under the given root' ((Test-Path $Cache.Ddc) -and (Test-Path $Cache.Zen) -and (Test-Path $Cache.Uba) -and $Cache.Ddc.StartsWith($Cache.Root))
+	Check 'the Zen port avoids the shared default' ($Cache.ZenPort -ge 8600 -and $Cache.ZenPort -lt 9000)
+	Check 'the Zen port is stable for a folder' ((Get-PluginCache $Cache.Root).ZenPort -eq $Cache.ZenPort)
+	$Other = Get-PluginCache (Join-Paths $Temp 'cache\UE5.7')
+	Check 'different folders usually get different ports' ($Other.ZenPort -ne $Cache.ZenPort)
+
+	$Saved = @{}
+	Get-ChildItem Env: | Where-Object { $_.Name -like 'UnrealBuildTool_*' } | ForEach-Object { $Saved[$_.Name] = $_.Value }
+	try
+	{
+		Set-UnrealBuildToolIsolation $Cache
+		Check 'UnrealBuildTool stays on this machine, with no cache server' ($env:UnrealBuildTool_BuildConfiguration__bAllowUBAExecutor -eq 'false' -and $env:UnrealBuildTool_BuildConfiguration__bAllowXGE -eq 'false' -and $env:UnrealBuildTool_UnrealBuildAccelerator__ForceNoCache -eq 'true' -and $env:UnrealBuildTool_UnrealBuildAccelerator__bDisableHorde -eq 'true')
+		Check "UBA's root is the cache folder" ($env:UnrealBuildTool_UnrealBuildAccelerator__RootDir -eq $Cache.Uba)
+	}
+	finally
+	{
+		Get-ChildItem Env: | Where-Object { $_.Name -like 'UnrealBuildTool_*' } | ForEach-Object { Remove-Item "Env:\$($_.Name)" }
+		foreach ($Name in $Saved.Keys) { [Environment]::SetEnvironmentVariable($Name, $Saved[$Name], 'Process') }
+	}
+
+	$EditorArguments = (Get-EditorCacheArguments $Cache) -join ' '
+	Check 'the editor cache graph has no Zen, shared or cloud store' ($EditorArguments -match '(^| )-DDC=\(Local\)( |$)')
+	Check 'the editor cache and Zen live in the cache folder' ($EditorArguments.Contains("-LocalDataCachePath=`"$($Cache.Ddc)`"") -and $EditorArguments.Contains("-ZenDataPath=`"$($Cache.Zen)`"") -and $EditorArguments.Contains("DesiredPort=$($Cache.ZenPort)"))
+
 	Write-Host 'Release notes'
 	$Repo = Join-Paths $Temp 'repo'
 	New-Item -ItemType Directory -Path $Repo -Force | Out-Null

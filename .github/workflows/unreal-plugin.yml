@@ -117,6 +117,15 @@ jobs:
           path: plugin
           sparse-checkout: .github/ci
 
+      # Fails the job at once, with an annotation, if this machine lacks the engine. A version
+      # that cannot be built here would reach Fab untested, so this is never skipped.
+      - name: Check Unreal Engine ${{ matrix.engine }}
+        shell: powershell
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          & plugin\.github\ci\scripts\Find-UnrealEngine.ps1 -EngineVersion $env:ENGINE
+
       # The workspace survives between jobs on a self-hosted runner.
       - name: Clear previous packages
         shell: powershell
@@ -131,6 +140,11 @@ jobs:
       # Builds the zip, not the checkout, so what passes is exactly what Fab receives. The work
       # folder is in the runner's temp directory, which is short (paths nest deep) and emptied
       # after every job.
+      #
+      # Caches go in this repository's own folder on the runner, .ue-cache in the workspace, kept
+      # between runs. The engine's defaults are per-user or machine-wide and shared with the other
+      # projects the build machine builds, so they are never used; see "Caches" in
+      # .github/ci/README.md.
       - name: Build
         id: build
         shell: powershell
@@ -139,7 +153,7 @@ jobs:
           PACKAGE: dist\${{ needs.package.outputs.plugin }}-${{ needs.package.outputs.version }}-UE${{ matrix.engine }}.zip
           STRICT_INCLUDES: ${{ inputs.strict-includes }}
         run: |
-          & plugin\.github\ci\scripts\Build-Plugin.ps1 -PackageZip $env:PACKAGE -EngineVersion $env:ENGINE -WorkDir "$env:RUNNER_TEMP\b" -StrictIncludes:($env:STRICT_INCLUDES -eq 'true')
+          & plugin\.github\ci\scripts\Build-Plugin.ps1 -PackageZip $env:PACKAGE -EngineVersion $env:ENGINE -WorkDir "$env:RUNNER_TEMP\b" -CacheDir "$env:GITHUB_WORKSPACE\.ue-cache\UE$env:ENGINE" -StrictIncludes:($env:STRICT_INCLUDES -eq 'true')
 
       - name: Test
         if: inputs.run-tests
@@ -149,7 +163,7 @@ jobs:
           PLUGIN_DIR: ${{ steps.build.outputs.plugin-dir }}
           TEST_FILTER: ${{ inputs.test-filter }}
         run: |
-          & plugin\.github\ci\scripts\Invoke-PluginTests.ps1 -PluginDir $env:PLUGIN_DIR -EngineVersion $env:ENGINE -WorkDir "$env:RUNNER_TEMP\t" -Filter $env:TEST_FILTER
+          & plugin\.github\ci\scripts\Invoke-PluginTests.ps1 -PluginDir $env:PLUGIN_DIR -EngineVersion $env:ENGINE -WorkDir "$env:RUNNER_TEMP\t" -CacheDir "$env:GITHUB_WORKSPACE\.ue-cache\UE$env:ENGINE" -Filter $env:TEST_FILTER
 
       - name: Upload logs
         if: always()

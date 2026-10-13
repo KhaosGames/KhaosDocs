@@ -101,12 +101,34 @@ The build job runs on a self-hosted runner with the labels in `build-runner`, by
 - Each engine version in `engine-versions`, installed from the Epic Games Launcher. These are the
   same precompiled engines buyers use. An engine is found through the Launcher's install list,
   then the registry, then `C:\Program Files\Epic Games\UE_<version>`. Set `UE_ROOT_5_8` (and so
-  on) in the runner's environment to point somewhere else.
+  on) in the runner's environment to point somewhere else; if that is set but wrong, the job
+  fails rather than falling back to another install.
+
+  A missing engine fails the job in its first step, with an annotation naming the machine and
+  what to install. It is an error, not a skipped version, because Fab compiles the plugin for
+  every engine version on the listing: one that cannot be built here would ship untested. Each
+  run's summary records the exact engine build it used.
 - The Visual Studio toolchain those engine versions require.
 - Windows PowerShell 5.1, which ships with Windows. The scripts avoid anything newer.
 
 Engine versions build one after another (`max-parallel: 1`); concurrent BuildPlugin runs on one
 machine share UnrealBuildTool state and fail spuriously.
+
+### Caches
+
+The build machine also builds other projects, such as WhatSub, which keep their caches in their
+own actions folders. A plugin build keeps its caches in its own: `.ue-cache\UE<version>` in the
+repository's workspace on the runner, kept between runs. Nothing goes to the engine's default
+cache locations, which are per user or per machine and so shared with everything else built
+there:
+
+| Default | Shared because | What the plugin build does instead |
+| --- | --- | --- |
+| UnrealBuildAccelerator store, `C:\ProgramData\Epic\UnrealBuildAccelerator` | One 40 GB store for every engine on the machine, so new entries evict others. Remote executors and UBA cache servers may also be set up for other projects. | UBA's root is moved into the cache folder. (Since 5.8 the UBA local executor is UnrealBuildTool's local executor and cannot be turned off.) Remote UBA, Horde, UBA cache servers, XGE, FASTBuild and SNDBS are off. Set through `UnrealBuildTool_<Section>__<Field>` environment variables, which UnrealBuildTool reads with the highest priority, on the build step only. |
+| Zen local server, port 8558, data in `%LOCALAPPDATA%\UnrealEngine\Common\Zen` | One server for every engine of that Windows user. An editor that wants a different data folder or version shuts the running server down. | The test editor's derived data cache is a single file store in the cache folder (`-DDC=(Local)`), so no Zen server starts. Zen's data folder and port are pointed at the cache folder too, in case something starts it anyway. |
+| Derived data cache, `%LOCALAPPDATA%\UnrealEngine\Common\DerivedDataCache`, plus any shared or cloud cache configured by environment variable | Every Launcher engine of that user, and any team-wide cache. | Not in the test editor's cache graph. |
+
+Delete `.ue-cache` on the runner to start cold; nothing else depends on it.
 
 ### Public repositories
 
