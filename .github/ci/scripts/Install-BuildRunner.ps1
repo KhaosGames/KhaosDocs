@@ -122,6 +122,17 @@ function Test-LocalGroupMember([string]$GroupSid, [string]$UserName)
 	return $false
 }
 
+<# Whether a folder denies the runner account all access. #>
+function Test-AccountDenied([string]$Path)
+{
+	$Full = [Security.AccessControl.FileSystemRights]::FullControl
+	try { $Acl = Get-Acl -LiteralPath $Path } catch { return $false }
+	$Denied = @($Acl.Access | Where-Object {
+		$_.AccessControlType -eq 'Deny' -and $_.IdentityReference.Value -eq $QualifiedAccount -and ($_.FileSystemRights -band $Full) -eq $Full
+	})
+	return ($Denied.Count -gt 0)
+}
+
 <#
 Whether any local account can list a folder: an allow for Users, Authenticated Users or Everyone
 with read access. The runner account gets those, so this is what it could read.
@@ -183,7 +194,7 @@ $TokenEndpoint = "$ApiScope/actions/runners/registration-token"
 $TokenPage = "$RunnersPage/new"
 
 <# A token for registering or removing a runner: from the GitHub CLI when signed in, or asked for. #>
-function Get-RunnerToken([string]$Kind, [string]$Instructions)
+function Get-RunnerToken([string]$Kind, [string]$Instructions, [switch]$AllowEmpty)
 {
 	if (Get-Command gh -ErrorAction SilentlyContinue)
 	{
@@ -196,7 +207,7 @@ function Get-RunnerToken([string]$Kind, [string]$Instructions)
 	$Pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
 	try { $Token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Pointer) }
 	finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Pointer) }
-	if (-not $Token) { throw "No $Kind token." }
+	if (-not $Token -and -not $AllowEmpty) { throw "No $Kind token." }
 	return $Token
 }
 
@@ -258,21 +269,49 @@ else { Write-Problem "Execution policy for new accounts is '$Policy', which bloc
 Write-Step 'Finding folders to protect'
 
 $Protect = New-Object System.Collections.Generic.List[string]
+$OwnFull = (Get-FullPath $RunnerDir).TrimEnd('\')
+
+# Runners are found three ways, since not every runner is a service: one started with run.cmd in
+# a signed-in session is only a process, and one that is stopped is only a folder.
+$Found = [ordered]@{}
+function Add-FoundRunner([string]$Root, [string]$How)
+{
+	if (-not $Root) { return }
+	$Full = (Get-FullPath $Root).TrimEnd('\')
+	if ($Full -eq $OwnFull) { return }
+	if ($Found.Contains($Full)) { $Found[$Full] += ", $How" } else { $Found[$Full] = $How }
+}
+
 foreach ($Service in @(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions.runner.%'"))
 {
 	$Exe = $Service.PathName -replace '^"([^"]+)".*$', '$1'
-	$Root = Split-Path (Split-Path $Exe -Parent) -Parent
-	$RootFull = (Get-FullPath $Root).TrimEnd('\')
-	$OwnFull = (Get-FullPath $RunnerDir).TrimEnd('\')
-	if ($RootFull -eq $OwnFull) { continue }
-
-	# Nested runner folders would share permissions and workspaces, which is what this avoids.
-	if ($OwnFull.StartsWith("$RootFull\", [StringComparison]::OrdinalIgnoreCase) -or $RootFull.StartsWith("$OwnFull\", [StringComparison]::OrdinalIgnoreCase))
+	Add-FoundRunner (Split-Path (Split-Path $Exe -Parent) -Parent) "service $($Service.Name) as $($Service.StartName)"
+}
+foreach ($Process in @(Get-CimInstance Win32_Process -Filter "Name = 'Runner.Listener.exe'"))
+{
+	if ($Process.ExecutablePath) { Add-FoundRunner (Split-Path (Split-Path $Process.ExecutablePath -Parent) -Parent) "running process $($Process.ProcessId)" }
+}
+$SkipScan = @('Windows', 'Program Files', 'Program Files (x86)', 'ProgramData', 'Users', '$Recycle.Bin', 'System Volume Information', 'Recovery')
+foreach ($Drive in @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType = 3'))
+{
+	foreach ($Top in @(Get-ChildItem -LiteralPath "$($Drive.DeviceID)\" -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $SkipScan -notcontains $_.Name }))
 	{
-		throw "$RunnerDir and the folder of runner $($Service.Name), $Root, would be inside one another. Pass -RunnerRoot with a folder outside it, such as C:\rp."
+		foreach ($Folder in @($Top) + @(Get-ChildItem -LiteralPath $Top.FullName -Directory -Force -ErrorAction SilentlyContinue))
+		{
+			if (Test-Path -LiteralPath (Join-Paths $Folder.FullName '.runner')) { Add-FoundRunner $Folder.FullName 'runner folder' }
+		}
+	}
+}
+
+foreach ($Root in $Found.Keys)
+{
+	# Nested runner folders would share permissions and workspaces, which is what this avoids.
+	if ($OwnFull.StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase) -or $Root.StartsWith("$OwnFull\", [StringComparison]::OrdinalIgnoreCase))
+	{
+		throw "$RunnerDir and the runner folder $Root would be inside one another. Pass -RunnerRoot with a folder outside it, such as C:\rp."
 	}
 
-	Write-Host "  Runner $($Service.Name), as $($Service.StartName), in $Root"
+	Write-Host "  Runner in $Root ($($Found[$Root]))"
 	$Protect.Add($Root)
 
 	# A runner can keep its work folder outside its install.
@@ -280,12 +319,16 @@ foreach ($Service in @(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions
 	if (Test-Path -LiteralPath $Settings)
 	{
 		$Work = (([IO.File]::ReadAllText($Settings)).TrimStart([char]0xFEFF) | ConvertFrom-Json).workFolder
-		if ($Work -and [IO.Path]::IsPathRooted($Work) -and -not (Get-FullPath $Work).StartsWith((Get-FullPath $Root), [StringComparison]::OrdinalIgnoreCase))
+		if ($Work -and [IO.Path]::IsPathRooted($Work) -and -not (Get-FullPath $Work).StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase))
 		{
 			Write-Host "    work folder $Work"
 			$Protect.Add($Work)
 		}
 	}
+}
+if ($Found.Count -eq 0)
+{
+	Write-Host '  No other runners found on this machine.'
 }
 foreach ($Path in $ProtectPaths)
 {
@@ -328,7 +371,7 @@ if (-not $WhatIfPreference)
 	}
 	if ($Existing)
 	{
-		$RemovalToken = Get-RunnerToken 'remove' "Open $RunnersPage, choose the runner in $RunnerDir, then Remove, and copy the token from the command shown (the value after --token)."
+		$RemovalToken = Get-RunnerToken 'remove' "Open $RunnersPage, choose the runner in $RunnerDir, then Remove, and copy the token from the command shown (the value after --token). If it is already gone from that page, for example after Force remove, press Enter." -AllowEmpty
 	}
 }
 
@@ -383,11 +426,7 @@ Write-Step 'Folder access'
 foreach ($Path in $Protect)
 {
 	# Already done on an earlier run: applying it again would walk the whole tree again.
-	$Denied = @((Get-Acl -LiteralPath $Path).Access | Where-Object {
-		$_.AccessControlType -eq 'Deny' -and $_.IdentityReference.Value -eq $QualifiedAccount -and
-		($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq [Security.AccessControl.FileSystemRights]::FullControl
-	})
-	if ($Denied.Count -gt 0)
+	if (Test-AccountDenied $Path)
 	{
 		Write-Host "  $Path is already denied to $QualifiedAccount."
 		continue
@@ -407,14 +446,42 @@ if ($Existing -and $PSCmdlet.ShouldProcess($RunnerDir, 'Unregister the runner th
 	Push-Location $RunnerDir
 	try
 	{
-		# Run elevated, this also stops and uninstalls the service.
-		& .\config.cmd remove --token $RemovalToken
-		if ($LASTEXITCODE -ne 0) { throw "Removing the existing runner failed (exit $LASTEXITCODE). Nothing else was changed in $RunnerDir." }
+		if ($RemovalToken)
+		{
+			# Run elevated, this also stops and uninstalls the service.
+			& .\config.cmd remove --token $RemovalToken
+			if ($LASTEXITCODE -ne 0) { throw "Removing the existing runner failed (exit $LASTEXITCODE). Nothing else was changed in $RunnerDir." }
+		}
+		else
+		{
+			Write-Host '  Already removed on GitHub; cleaning up here only.'
+		}
 	}
 	finally
 	{
 		Pop-Location
 	}
+
+	# Whatever is still running from the folder: the service of a runner removed on GitHub, or one
+	# started by hand.
+	$Prefix = "$RunnerDir\"
+	foreach ($Service in @(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions.runner.%'"))
+	{
+		$Exe = $Service.PathName -replace '^"([^"]+)".*$', '$1'
+		if (-not $Exe.StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+		Stop-Service -Name $Service.Name -Force -ErrorAction SilentlyContinue
+		& sc.exe delete $Service.Name | Out-Null
+		Write-Host "  Removed service $($Service.Name)."
+	}
+	foreach ($Process in @(Get-CimInstance Win32_Process -Filter "Name = 'Runner.Listener.exe' OR Name = 'Runner.Worker.exe'"))
+	{
+		if ($Process.ExecutablePath -and $Process.ExecutablePath.StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase))
+		{
+			Stop-Process -Id $Process.ProcessId -Force -ErrorAction SilentlyContinue
+		}
+	}
+	Start-Sleep -Seconds 2
+
 	# rd with \\?\ copes with workspace paths past 260 characters, which Remove-Item does not.
 	& cmd.exe /c rd /s /q "\\?\$RunnerDir"
 	if (Test-Path -LiteralPath $RunnerDir) { throw "Could not delete $RunnerDir; close anything using it and run again." }
@@ -484,6 +551,18 @@ if ($PSCmdlet.ShouldProcess($RunnerName, "Register with $Url and install as a se
 	if ($Service.Status -ne 'Running') { Start-Service -Name $Service.Name }
 	$Service = Get-Service -Name $Service.Name
 	Write-Host "  Service $($Service.Name) is $($Service.Status), starting $($Service.StartType.ToString().ToLowerInvariant()) with Windows."
+}
+
+# Check ------------------------------------------------------------------------------------------
+
+if (-not $WhatIfPreference)
+{
+	Write-Step 'Checking protection'
+	foreach ($Path in $Protect)
+	{
+		if (Test-AccountDenied $Path) { Write-Host "  ${Path}: denied to $QualifiedAccount" }
+		else { Write-Problem "$Path is NOT denied to $QualifiedAccount. Run again, or deny it by hand with: icacls `"$Path`" /deny `"${QualifiedAccount}:(OI)(CI)F`"" }
+	}
 }
 
 # Done -------------------------------------------------------------------------------------------
