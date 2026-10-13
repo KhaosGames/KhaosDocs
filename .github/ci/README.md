@@ -96,7 +96,23 @@ uses the pipeline.
 ## The build machine
 
 The build job runs on a self-hosted runner with the labels in `build-runner`, by default
-`self-hosted` and `Windows`. It needs:
+`self-hosted`, `Windows` and `ue-plugins`. The `ue-plugins` label keeps plugin builds off runners
+set up for other projects, even ones a repository could otherwise reach.
+
+Set one up with `scripts\Install-BuildRunner.ps1`, from an elevated Windows PowerShell on the
+build machine. Try it with `-WhatIf` first; it changes nothing and shows what it would do.
+
+```powershell
+.\Install-BuildRunner.ps1 -Target KhaosGames/KhaosDocs
+```
+
+It checks the machine, creates a dedicated standard Windows account, shuts that account out of the
+other runners' folders and anything in `-ProtectPaths` (`C:\steamcmd` by default), lists any other
+top-level folders every local account can read so you can add them, then installs a verified copy
+of the GitHub Actions runner as a service in `C:\r\<name>` running as that account. It fetches the
+registration token with the GitHub CLI when that is signed in, or asks for it.
+
+The build machine needs:
 
 - Each engine version in `engine-versions`, installed from the Epic Games Launcher. These are the
   same precompiled engines buyers use. An engine is found through the Launcher's install list,
@@ -138,11 +154,16 @@ itself, so that guard alone protects nothing. What does:
 
 - Keep the organization's main build runner away from public repositories. In the Default runner
   group, "Allow public repositories" stays off.
-- For a public plugin, register a separate runner instance, at the repository level, running as a
-  local Windows account that cannot reach Steam credentials, the NAS or other secrets on the
-  machine.
-- Under the organization's Actions settings, require approval for workflows from all outside
-  collaborators, not only first-time ones, and read a fork's changes before approving a run.
+- Give each public plugin its own runner at the repository level, with `Install-BuildRunner.ps1
+  -Target <org>/<repo>`: its own account, shut out of the other runners' folders, Steam and
+  anything else private on the machine. Private plugins can share one organization-level runner
+  (`-Target <org>`).
+- Require approval for workflows from all outside contributors, not only first-time ones, and
+  read a fork's changes before approving a run:
+
+  ```bash
+  gh api -X PUT orgs/KhaosGames/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors
+  ```
 
 ## Inputs
 
@@ -154,7 +175,7 @@ Set in `ci.yml`.
 | `run-tests` | `true` | Run automation tests. |
 | `test-filter` | plugin name | Automation test filter. |
 | `strict-includes` | `true` | Also compile without unity builds or shared PCHs. |
-| `build-runner` | `'["self-hosted", "Windows"]'` | Runner labels for the build machine. |
+| `build-runner` | `'["self-hosted", "Windows", "ue-plugins"]'` | Runner labels for the build machine. |
 
 ## Moving it out
 

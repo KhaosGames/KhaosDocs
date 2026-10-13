@@ -35,9 +35,12 @@ on:
         type: boolean
         default: true
       build-runner:
-        description: JSON array of labels selecting the build machine, which needs the engine versions installed from the Epic Games Launcher.
+        description: >-
+          JSON array of labels selecting the build machine, which needs the engine versions installed from the Epic
+          Games Launcher. The ue-plugins label keeps plugin builds off runners set up for other projects; see
+          .github/ci/scripts/Install-BuildRunner.ps1.
         type: string
-        default: '["self-hosted", "Windows"]'
+        default: '["self-hosted", "Windows", "ue-plugins"]'
     secrets:
       discord-webhook-url:
         description: Discord webhook for release and failure notices. Optional.
