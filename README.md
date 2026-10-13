@@ -59,6 +59,22 @@ package and never enters the asset registry. Saving writes the `.md`.
 One widget, `SKhaosDocsDocumentEditor`, does all reading and editing, hosted in the right pane of
 the documentation window.
 
+## Development
+
+Tests are automation specs under `Source/KhaosDocsEditor/Private/Tests`, named `KhaosDocs.*`.
+Run them from Session Frontend in the editor, or headless the way CI does.
+
+CI checks every push against Fab's requirements, compiles the plugin against the Launcher build of
+each supported engine and runs the tests; see [.github/ci](.github/ci/README.md). To release,
+push a version tag:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The run's summary then has the links and notes to paste into the Fab publisher portal.
+
 ## Status
 
 Early. The renderer handles headings, emphasis, code blocks, lists, quotes, rules and links, each
