@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   plugin:
-    uses: KhaosSystems/unreal-actions/.github/workflows/unreal-plugin.yml@v1
+    uses: KhaosSystems/unreal-actions/.github/workflows/plugin.yml@v1
     permissions:
       contents: write # releases and badges
     with:
