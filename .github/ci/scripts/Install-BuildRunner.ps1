@@ -37,10 +37,10 @@ Folders the runner account must not read, on top of the other runners' folders, 
 protected. The script lists the top-level folders the account could otherwise read.
 
 .EXAMPLE
-.\Install-BuildRunner.ps1 -Target KhaosGames/KhaosDocs
+.\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs
 
 .EXAMPLE
-.\Install-BuildRunner.ps1 -Target KhaosGames/KhaosDocs -ProtectPaths C:\steamcmd, C:\Dev -WhatIf
+.\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs -ProtectPaths C:\steamcmd, C:\Dev -WhatIf
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(

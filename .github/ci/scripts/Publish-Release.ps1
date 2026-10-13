@@ -15,7 +15,7 @@ hosting elsewhere before Fab can fetch them.
 Re-running a release replaces the zips on the existing release rather than failing.
 
 .EXAMPLE
-./Publish-Release.ps1 -PluginDir ./plugin -PackageDir ./dist -Tag v1.2.0 -Repository KhaosGames/KhaosDocs
+./Publish-Release.ps1 -PluginDir ./plugin -PackageDir ./dist -Tag v1.2.0 -Repository KhaosSystems/KhaosDocs
 #>
 [CmdletBinding()]
 param(
@@ -73,6 +73,46 @@ else
 	if ($LASTEXITCODE -ne 0) { throw "Creating release $Tag failed." }
 }
 
+# Release branch --------------------------------------------------------------------------------
+
+# Games take plugins as submodules tracking the release branch, and Dependabot opens a pull request
+# in each game when that branch moves. So it moves only to stable releases, and only forward: a
+# later tag for an older line, such as a hotfix of a previous version, leaves it where it is.
+$ReleaseBranchNote = $null
+if (-not $Release.VersionName.Contains('-'))
+{
+	$Commit = (Invoke-NativeQuiet gh @('api', "repos/$Repository/commits/$Tag", '--jq', '.sha')).Output | Select-Object -First 1
+	if (-not $Commit) { throw "Could not resolve $Tag to a commit." }
+
+	$Current = Invoke-NativeQuiet gh @('api', "repos/$Repository/git/ref/heads/release", '--jq', '.object.sha')
+	if ($Current.ExitCode -ne 0)
+	{
+		& gh api -X POST "repos/$Repository/git/refs" -f 'ref=refs/heads/release' -f "sha=$Commit" --silent
+		if ($LASTEXITCODE -ne 0) { throw 'Creating the release branch failed.' }
+		$ReleaseBranchNote = "Created the ``release`` branch at $Tag."
+	}
+	else
+	{
+		$Status = (Invoke-NativeQuiet gh @('api', "repos/$Repository/compare/release...$Commit", '--jq', '.status')).Output | Select-Object -First 1
+		if ($Status -eq 'ahead')
+		{
+			& gh api -X PATCH "repos/$Repository/git/refs/heads/release" -f "sha=$Commit" --silent
+			if ($LASTEXITCODE -ne 0) { throw 'Moving the release branch failed.' }
+			$ReleaseBranchNote = "Moved the ``release`` branch to $Tag; games tracking it get a Dependabot pull request."
+		}
+		elseif ($Status -eq 'identical')
+		{
+			$ReleaseBranchNote = "The ``release`` branch is already at $Tag."
+		}
+		else
+		{
+			$ReleaseBranchNote = "Left the ``release`` branch where it is: $Tag is $Status of it, not ahead."
+			Write-CiAnnotation warning $ReleaseBranchNote -Title 'Release branch not moved'
+		}
+	}
+	Write-Host $ReleaseBranchNote
+}
+
 # Fab checklist ---------------------------------------------------------------------------------
 
 $IsPrivate = (Invoke-NativeQuiet gh @('api', "repos/$Repository", '--jq', '.private')).Output -contains 'true'
@@ -109,6 +149,12 @@ if (-not (Get-JsonValue $Descriptor.Json 'FabURL'))
 {
 	$Summary += ''
 	$Summary += 'Once the listing is live, set `"FabURL"` in the .uplugin to its address and include that in the next update.'
+}
+
+if ($ReleaseBranchNote)
+{
+	$Summary += ''
+	$Summary += $ReleaseBranchNote
 }
 
 Add-CiSummary ($Summary -join "`n")

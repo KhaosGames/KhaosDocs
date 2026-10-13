@@ -5,7 +5,7 @@ Epic does when it receives a submission, runs its automation tests, and turns a 
 a release whose links and notes paste straight into the Fab publisher portal.
 
 It lives here while it settles, and is written to move out to a shared repository for all the
-Khaos Games plugins once it runs smoothly; see [Moving it out](#moving-it-out). Nothing in it is
+Khaos Systems plugins once it runs smoothly; see [Moving it out](#moving-it-out). Nothing in it is
 specific to KhaosDocs.
 
 Fab has no publishing API, and none of the community tools submit for you either, so the last
@@ -93,6 +93,41 @@ somewhere Fab can download them without signing in (Fab's docs suggest Google Dr
 OneDrive) before submitting. KhaosDocs is public, so this only matters once a private plugin
 uses the pipeline.
 
+## Using a plugin in a game
+
+A stable release also moves the plugin's `release` branch to the tagged commit. It only moves
+forward, and never for a prerelease, so it always holds the newest version that passed CI and was
+published. Games add the plugin as a submodule tracking that branch:
+
+```bash
+git submodule add -b release https://github.com/KhaosSystems/KhaosDocs Plugins/KhaosDocs
+```
+
+and let Dependabot watch their submodules, in the game's `.github/dependabot.yml`:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: daily
+    allow:
+      - dependency-name: Plugins/Khaos*
+```
+
+Dependabot follows the `branch` that `-b release` writes into `.gitmodules`, so within a day of a
+release the game gets a pull request moving the submodule to it, with the plugin's commits listed.
+`allow` keeps it to Khaos plugins; third-party submodules that track a moving branch are left
+alone.
+
+For the pull request to be tested before it is merged, the game's CI has to run on pull requests.
+
+A private plugin also needs Dependabot to be able to read it: a fine-grained token with read-only
+access to the plugin repositories, saved as a Dependabot secret in the game and given to Dependabot
+as a `git` registry for `https://github.com`. The game's CI needs the same access to check the
+submodule out.
+
 ## The build machine
 
 The build job runs on a self-hosted runner with the labels in `build-runner`, by default
@@ -103,7 +138,7 @@ Set one up with `scripts\Install-BuildRunner.ps1`, from an elevated Windows Powe
 build machine. Try it with `-WhatIf` first; it changes nothing and shows what it would do.
 
 ```powershell
-.\Install-BuildRunner.ps1 -Target KhaosGames/KhaosDocs
+.\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs
 ```
 
 It checks the machine, creates a dedicated standard Windows account, shuts that account out of the
@@ -163,7 +198,7 @@ itself, so that guard alone protects nothing. What does:
   read a fork's changes before approving a run:
 
   ```bash
-  gh api -X PUT orgs/KhaosGames/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors
+  gh api -X PUT orgs/KhaosSystems/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors
   ```
 
 ## Inputs
