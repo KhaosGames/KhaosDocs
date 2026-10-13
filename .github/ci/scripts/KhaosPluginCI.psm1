@@ -389,6 +389,8 @@ function Set-UnrealBuildToolIsolation
 
 	$Settings = [ordered]@{
 		'UnrealBuildAccelerator__RootDir' = $Cache.Uba
+		# The default 40 GB is sized for whole games; plugins stay far below this.
+		'UnrealBuildAccelerator__StoreCapacityGb' = '5'
 		'UnrealBuildAccelerator__ForceNoCache' = 'true'
 		'UnrealBuildAccelerator__bDisableHorde' = 'true'
 		'BuildConfiguration__bAllowUBAExecutor' = 'false'

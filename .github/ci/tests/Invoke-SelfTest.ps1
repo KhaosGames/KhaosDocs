@@ -303,7 +303,7 @@ try
 	{
 		Set-UnrealBuildToolIsolation $Cache
 		Check 'UnrealBuildTool stays on this machine, with no cache server' ($env:UnrealBuildTool_BuildConfiguration__bAllowUBAExecutor -eq 'false' -and $env:UnrealBuildTool_BuildConfiguration__bAllowXGE -eq 'false' -and $env:UnrealBuildTool_UnrealBuildAccelerator__ForceNoCache -eq 'true' -and $env:UnrealBuildTool_UnrealBuildAccelerator__bDisableHorde -eq 'true')
-		Check "UBA's root is the cache folder" ($env:UnrealBuildTool_UnrealBuildAccelerator__RootDir -eq $Cache.Uba)
+		Check "UBA's root is the cache folder, with a small cap" ($env:UnrealBuildTool_UnrealBuildAccelerator__RootDir -eq $Cache.Uba -and $env:UnrealBuildTool_UnrealBuildAccelerator__StoreCapacityGb -eq '5')
 	}
 	finally
 	{
