@@ -1,0 +1,23 @@
+# Build, test and release with KhaosSystems/unreal-actions. Push a vX.Y.Z tag to release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  plugin:
+    uses: KhaosSystems/unreal-actions/.github/workflows/plugin.yml@v1
+    permissions:
+      contents: write # releases and badges
+    with:
+      engine-versions: '["5.8"]'
+    secrets:
+      discord-webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}

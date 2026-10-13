@@ -1,4 +1,4 @@
-// Copyright Khaos Games. All Rights Reserved.
+// Copyright Khaos Systems. All Rights Reserved.
 
 #include "SKhaosDocsDocumentEditor.h"
 
@@ -13,6 +13,7 @@
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/StyleColors.h"
+#include "UObject/Package.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
