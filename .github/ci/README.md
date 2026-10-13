@@ -131,8 +131,9 @@ submodule out.
 ## The build machine
 
 The build job runs on a self-hosted runner with the labels in `build-runner`, by default
-`self-hosted`, `Windows` and `ue-plugins`. The `ue-plugins` label keeps plugin builds off runners
-set up for other projects, even ones a repository could otherwise reach.
+`self-hosted`, `Windows` and `unreal`. The `unreal` label marks runners set up by the script below,
+with Unreal Engine installed and their own account and caches, so plugin builds never land on a
+runner set up for something else.
 
 Set one up with `scripts\Install-BuildRunner.ps1`, from an elevated Windows PowerShell on the
 build machine. Try it with `-WhatIf` first; it changes nothing and shows what it would do.
@@ -194,12 +195,12 @@ itself, so that guard alone protects nothing. What does:
   runners' folders, Steam and anything else private on the machine. Either one per repository
   (`-Target <org>/<repo>`), or one shared by several through a runner group, which the
   organization must be on the Team plan or above to have:
-  - Public plugins: a group with "Allow public repositories" on and only the public plugin
-    repositories selected, and a runner in it,
-    `-Target <org> -Name plugins-public -RunnerGroup unreal-plugins-public`.
-  - Private plugins: a separate group and runner, `-Name plugins-private -RunnerGroup
-    unreal-plugins-private`, so code from a public pull request never runs under the account that
-    builds private source.
+  - An `unreal` group with "Allow public repositories" on and the plugin repositories selected,
+    and a runner in it: `-Target <org> -Name unreal -RunnerGroup unreal`.
+  - Everything in one group shares one runner and account. If private repositories join, code
+    from an approved public pull request could read their workspaces there. To rule that out,
+    give private repositories a second group and runner, such as `-Name unreal-private
+    -RunnerGroup unreal-private`.
 - Require approval for workflows from all outside contributors, not only first-time ones, and
   read a fork's changes before approving a run:
 
@@ -217,7 +218,7 @@ Set in `ci.yml`.
 | `run-tests` | `true` | Run automation tests. |
 | `test-filter` | plugin name | Automation test filter. |
 | `strict-includes` | `true` | Also compile without unity builds or shared PCHs. |
-| `build-runner` | `'["self-hosted", "Windows", "ue-plugins"]'` | Runner labels for the build machine. |
+| `build-runner` | `'["self-hosted", "Windows", "unreal"]'` | Runner labels for the build machine. |
 
 ## Moving it out
 

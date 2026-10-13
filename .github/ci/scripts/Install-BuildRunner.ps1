@@ -17,7 +17,7 @@ Run once per runner, from an elevated Windows PowerShell on the build machine. I
   4. Downloads the current GitHub Actions runner, checks its SHA-256 against the one GitHub
      publishes, and unpacks it into a short folder, C:\rp\<name>, since Unreal build paths nest
      deep. It refuses a folder inside another runner's.
-  5. Registers it with the ue-plugins label and installs it as a service running as that account.
+  5. Registers it with the unreal label and installs it as a service running as that account.
 
 A runner for a public repository runs code from pull requests. Pair it with the organization
 setting that requires approval before workflows run for all outside contributors.
@@ -29,7 +29,7 @@ owner/repo for a runner only that repository can use. An organization name for o
 of the organization's repositories share, through -RunnerGroup.
 
 .PARAMETER Name
-What the runner is for, in a few lowercase letters, such as plugins-public. It names the runner
+What the runner is for, in a few lowercase letters, such as unreal. It names the runner
 (<computer>-<name>), its account (gh-<name>) and its folder (C:\rp\<name>). Defaults to the
 repository or organization name.
 
@@ -50,7 +50,7 @@ protected. The script lists the top-level folders the account could otherwise re
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs
 
 .EXAMPLE
-.\Install-BuildRunner.ps1 -Target KhaosSystems -Name plugins-public -RunnerGroup unreal-plugins-public
+.\Install-BuildRunner.ps1 -Target KhaosSystems -Name unreal -RunnerGroup unreal
 
 .EXAMPLE
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs -ProtectPaths C:\steamcmd, C:\Dev -WhatIf
@@ -63,7 +63,7 @@ param(
 	[string]$RegistrationToken,
 	[string[]]$EngineVersions = @('5.8'),
 	[string[]]$ProtectPaths = @('C:\steamcmd'),
-	[string[]]$Labels = @('ue-plugins'),
+	[string[]]$Labels = @('unreal'),
 	# Short, since Unreal build paths nest deep; "runners, plugins". Must not be inside another
 	# runner's folder.
 	[string]$RunnerRoot = 'C:\rp',
@@ -131,7 +131,7 @@ $IsRepository = $Target.Contains('/')
 $ShortName = ($Target.Split('/') | Select-Object -Last 1).ToLowerInvariant()
 if ($Name)
 {
-	if ($Name -notmatch '^[a-z0-9][a-z0-9-]{0,16}$') { throw "-Name should be up to 17 lowercase letters, digits and dashes, such as plugins-public." }
+	if ($Name -notmatch '^[a-z0-9][a-z0-9-]{0,16}$') { throw "-Name should be up to 17 lowercase letters, digits and dashes, such as unreal." }
 	$ShortName = $Name
 }
 if ($RunnerGroup -and $IsRepository)
