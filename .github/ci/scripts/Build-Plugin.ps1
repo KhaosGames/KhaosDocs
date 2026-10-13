@@ -44,7 +44,7 @@ $WorkDir = Get-FullPath $WorkDir
 if (-not $CacheDir) { $CacheDir = Join-Paths $WorkDir 'cache' }
 $Cache = Get-PluginCache $CacheDir
 Set-UnrealBuildToolIsolation $Cache
-Write-Host "UnrealBuildTool caches in $($Cache.Root), local executor only"
+Write-Host "UnrealBuildTool caches in $($Cache.Root); remote executors and cache servers off"
 $SourceRoot = Join-Paths $WorkDir 'src'
 $LogDir = Join-Paths $WorkDir 'logs'
 Expand-PluginZip -ZipPath (Get-FullPath $PackageZip) -Destination $SourceRoot

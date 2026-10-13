@@ -60,7 +60,7 @@ jobs:
       release: ${{ steps.kind.outputs.release }}
     steps:
       - name: Check out plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: plugin
 
@@ -92,7 +92,7 @@ jobs:
           & plugin\.github\ci\scripts\New-SourcePackage.ps1 -PluginDir plugin -OutDir dist -EngineVersions $env:ENGINE_VERSIONS -Version $env:RELEASE_VERSION
 
       - name: Upload source packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: source-packages
           path: dist/
@@ -116,7 +116,7 @@ jobs:
     steps:
       # Only the scripts: the build uses the packaged zip, never the checkout.
       - name: Check out CI scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: plugin
           sparse-checkout: .github/ci
@@ -136,7 +136,7 @@ jobs:
         run: if (Test-Path dist) { Remove-Item dist -Recurse -Force }
 
       - name: Download source packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: source-packages
           path: dist
@@ -171,7 +171,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: logs-UE${{ matrix.engine }}
           path: |
@@ -183,7 +183,7 @@ jobs:
 
       # Prebuilt for Win64, for anyone on the team who wants the plugin without compiling it.
       - name: Upload built plugin
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.package.outputs.plugin }}-UE${{ matrix.engine }}-Win64
           path: ${{ steps.build.outputs.plugin-dir }}
@@ -200,13 +200,13 @@ jobs:
       url: ${{ steps.publish.outputs.url }}
     steps:
       - name: Check out plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: plugin
           fetch-depth: 0 # release notes are the commits since the previous tag
 
       - name: Download source packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: source-packages
           path: dist
