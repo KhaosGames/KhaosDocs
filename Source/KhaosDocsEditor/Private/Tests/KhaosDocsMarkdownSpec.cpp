@@ -1,4 +1,4 @@
-// Copyright Khaos Games. All Rights Reserved.
+// Copyright Khaos Systems. All Rights Reserved.
 
 #include "KhaosDocsMarkdown.h"
 #include "Misc/AutomationTest.h"

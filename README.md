@@ -34,11 +34,15 @@ as a dependency.
 ## Installing
 
 ```bash
-git submodule add https://github.com/KhaosGames/KhaosDocs Plugins/KhaosDocs
+git submodule add -b release https://github.com/KhaosSystems/KhaosDocs Plugins/KhaosDocs
 ```
 
 Regenerate project files and build. The plugin is editor-only and contributes nothing to a
 packaged build.
+
+The `release` branch only ever holds released versions, each one built and tested first. Track it,
+and Dependabot can open a pull request in your project whenever a new version comes out; see
+[.github/ci](.github/ci/README.md#using-a-plugin-in-a-game).
 
 ## How it works
 
