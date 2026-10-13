@@ -50,7 +50,7 @@ protected. The script lists the top-level folders the account could otherwise re
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs
 
 .EXAMPLE
-.\Install-BuildRunner.ps1 -Target KhaosSystems -Name unreal -RunnerGroup unreal
+.\Install-BuildRunner.ps1 -Target KhaosSystems -Name unreal -RunnerGroup on-prem-unreal
 
 .EXAMPLE
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs -ProtectPaths C:\steamcmd, C:\Dev -WhatIf

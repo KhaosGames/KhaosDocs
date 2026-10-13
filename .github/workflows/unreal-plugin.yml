@@ -4,12 +4,14 @@
 # move out to a shared repository once they run smoothly, so every plugin can call them.
 #
 #   package  GitHub-hosted. Tests the CI scripts, checks the plugin against Fab's code plugin
-#            requirements and writes the source zips Fab is given, one per engine version. Runs
-#            for every push and pull request, forks included, as nothing here touches the build
-#            machine.
+#            requirements and writes the source zips Fab is given, one per engine version.
 #   build    Build machine. Compiles each zip with BuildPlugin against the installed engine, as
 #            Epic does when it receives a submission, then runs the plugin's automation tests on
-#            the result. Never runs for pull requests from forks.
+#            the result.
+#
+# A pull request from an outside contributor runs none of this until a maintainer has read it and
+# approved the run: the organization requires approval for all outside contributors. That review
+# is what stands between a pull request and the build machine.
 #   release  On a vX.Y.Z tag, once every engine passed: a GitHub release carrying the same zips,
 #            and a job summary with the links and notes to paste into the Fab portal.
 #   notify   Optional Discord message for releases and failures.
@@ -99,9 +101,8 @@ jobs:
   build:
     name: Build and test (UE ${{ matrix.engine }})
     needs: package
-    # Compiling runs the plugin's code on the build machine (Build.cs files are C#), so a pull
-    # request from a fork never gets here. It still gets the validation above.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Compiling runs the pull request's code on the build machine (Build.cs files are C#). For an
+    # outside contributor that only happens once a maintainer has approved the run; see the top.
     runs-on: ${{ fromJSON(inputs.build-runner) }}
     timeout-minutes: 120
     permissions:

@@ -183,30 +183,34 @@ there:
 
 Delete `.ue-cache` on the runner to start cold; nothing else depends on it.
 
-### Public repositories
+### Public repositories and pull requests
 
-Building a plugin runs its code on the build machine, and `Build.cs` files are C#. The workflow
-never builds a pull request from a fork, but a fork's pull request can change the workflow
-itself, so that guard alone protects nothing. What does:
+Building a plugin runs its code on the build machine, and `Build.cs` files are C#. A pull request
+can also change the workflow itself, so nothing in the workflow can keep a pull request off the
+build machine. What does:
 
-- Keep the organization's main build runner away from public repositories. In the Default runner
-  group, "Allow public repositories" stays off.
-- Run plugin builds on runners of their own, each under its own account, shut out of the other
-  runners' folders, Steam and anything else private on the machine. Either one per repository
-  (`-Target <org>/<repo>`), or one shared by several through a runner group, which the
-  organization must be on the Team plan or above to have:
-  - An `unreal` group with "Allow public repositories" on and the plugin repositories selected,
-    and a runner in it: `-Target <org> -Name unreal -RunnerGroup unreal`.
-  - Everything in one group shares one runner and account. If private repositories join, code
-    from an approved public pull request could read their workspaces there. To rule that out,
-    give private repositories a second group and runner, such as `-Name unreal-private
-    -RunnerGroup unreal-private`.
-- Require approval for workflows from all outside contributors, not only first-time ones, and
-  read a fork's changes before approving a run:
+- **Review before anything runs.** In the organization's Settings > Actions > General, under
+  "Approval for running fork pull request workflows from contributors", choose "Require approval
+  for all external contributors". Or:
 
   ```bash
   gh api -X PUT orgs/KhaosSystems/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors
   ```
+
+  A pull request from someone outside the organization then shows "Awaiting approval" and its
+  workflows wait until someone with write access chooses "Approve workflows to run" in its merge
+  status panel. Read the change first, especially `.github/` and any `.Build.cs` or `.Target.cs`,
+  and look again at whatever they push before approving more runs. Members' pull requests from
+  branches in the repository run straight away. Never add `pull_request_target` workflows here:
+  GitHub runs those without approval.
+- **Unreal builds on runners of their own.** One `on-prem-unreal` runner group with "Allow public
+  repositories" on and the plugin repositories, public and private, selected; its runner set up
+  with `-Target <org> -Name unreal -RunnerGroup on-prem-unreal`. It runs under its own account, shut out
+  of the other runners' folders, Steam and anything else private on the machine. Everything in the
+  group shares that account, so an approved pull request on one plugin can read the others'
+  workspaces on that runner; the review above is what covers that.
+- **Keep other build runners away from public repositories.** In their runner groups, "Allow
+  public repositories" stays off.
 
 ## Inputs
 
