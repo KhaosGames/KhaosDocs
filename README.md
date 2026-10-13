@@ -25,6 +25,7 @@ in the editor's documentation window.
 
 ## Development
 
-Tests are automation specs in `Source/KhaosDocsEditor/Private/Tests`. CI and releases run on
-[KhaosSystems/unreal-actions](https://github.com/KhaosSystems/unreal-actions); push a `vX.Y.Z` tag
-to release.
+Tests are automation specs in `Source/KhaosDocsEditor/Private/Tests`. Commits are
+[conventional commits](https://www.conventionalcommits.org). CI and releases run on
+[KhaosSystems/unreal-actions](https://github.com/KhaosSystems/unreal-actions): to release, run the
+CI workflow on `main` with *Release the next version* ticked.
