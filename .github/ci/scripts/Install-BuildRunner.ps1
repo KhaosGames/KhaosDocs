@@ -25,8 +25,18 @@ setting that requires approval before workflows run for all outside contributors
 Use -WhatIf to see what it would do without changing anything.
 
 .PARAMETER Target
-owner/repo for a runner only that repository can use, which is what a public repository needs. An
-organization name for one that the organization's private repositories share.
+owner/repo for a runner only that repository can use. An organization name for one that several
+of the organization's repositories share, through -RunnerGroup.
+
+.PARAMETER Name
+What the runner is for, in a few lowercase letters, such as plugins-public. It names the runner
+(<computer>-<name>), its account (gh-<name>) and its folder (C:\rp\<name>). Defaults to the
+repository or organization name.
+
+.PARAMETER RunnerGroup
+For an organization runner: the runner group to join, which decides which repositories can use
+it. A group for public plugins needs "Allow public repositories" on and only those repositories
+selected. Create the group first, under the organization's Settings > Actions > Runner groups.
 
 .PARAMETER RegistrationToken
 The token from Settings > Actions > Runners > New self-hosted runner (the value after --token).
@@ -40,11 +50,16 @@ protected. The script lists the top-level folders the account could otherwise re
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs
 
 .EXAMPLE
+.\Install-BuildRunner.ps1 -Target KhaosSystems -Name plugins-public -RunnerGroup unreal-plugins-public
+
+.EXAMPLE
 .\Install-BuildRunner.ps1 -Target KhaosSystems/KhaosDocs -ProtectPaths C:\steamcmd, C:\Dev -WhatIf
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
 	[Parameter(Mandatory)][string]$Target,
+	[string]$Name,
+	[string]$RunnerGroup,
 	[string]$RegistrationToken,
 	[string[]]$EngineVersions = @('5.8'),
 	[string[]]$ProtectPaths = @('C:\steamcmd'),
@@ -114,6 +129,15 @@ function Test-ReadableByAnyUser([string]$Path)
 $script:Problems = @()
 $IsRepository = $Target.Contains('/')
 $ShortName = ($Target.Split('/') | Select-Object -Last 1).ToLowerInvariant()
+if ($Name)
+{
+	if ($Name -notmatch '^[a-z0-9][a-z0-9-]{0,16}$') { throw "-Name should be up to 17 lowercase letters, digits and dashes, such as plugins-public." }
+	$ShortName = $Name
+}
+if ($RunnerGroup -and $IsRepository)
+{
+	throw "-RunnerGroup is for organization runners. Use -Target $($Target.Split('/')[0]) to share one runner between repositories, or leave -RunnerGroup out."
+}
 if (-not $Account)
 {
 	# Windows account names stop at 20 characters.
@@ -146,7 +170,9 @@ if (Test-Path -LiteralPath (Join-Paths $RunnerDir '.runner'))
 	throw "A runner is already configured in $RunnerDir. Remove it first: in an elevated prompt run '$RunnerDir\config.cmd remove', delete the folder, and remove the runner from $Url/settings/actions/runners if it is still listed."
 }
 
-Write-Host "Runner $RunnerName for $Target, as $QualifiedAccount, in $RunnerDir"
+$Joining = ''
+if ($RunnerGroup) { $Joining = ", runner group $RunnerGroup" }
+Write-Host "Runner $RunnerName for $Target$Joining, as $QualifiedAccount, in $RunnerDir"
 
 # 1. What plugin builds need ---------------------------------------------------------------------
 
@@ -376,7 +402,9 @@ if ($PSCmdlet.ShouldProcess($RunnerName, "Register with $Url and install as a se
 	Push-Location $RunnerDir
 	try
 	{
-		& .\config.cmd --unattended --url $Url --token $RegistrationToken --name $RunnerName --labels ($Labels -join ',') --work _w --runasservice --windowslogonaccount $QualifiedAccount --windowslogonpassword $Password --replace
+		$Configure = @('--unattended', '--url', $Url, '--token', $RegistrationToken, '--name', $RunnerName, '--labels', ($Labels -join ','), '--work', '_w', '--runasservice', '--windowslogonaccount', $QualifiedAccount, '--windowslogonpassword', $Password, '--replace')
+		if ($RunnerGroup) { $Configure += @('--runnergroup', $RunnerGroup) }
+		& .\config.cmd @Configure
 		if ($LASTEXITCODE -ne 0) { throw "config.cmd failed with exit code $LASTEXITCODE." }
 	}
 	finally
@@ -393,12 +421,11 @@ if ($PSCmdlet.ShouldProcess($RunnerName, "Register with $Url and install as a se
 # Done -------------------------------------------------------------------------------------------
 
 Write-Step 'Done'
-Write-Host "Runner $RunnerName for $Target with labels self-hosted, Windows, X64, $($Labels -join ', ')."
-if ($IsRepository)
-{
-	Write-Host 'Public repository? Require approval for workflows from all outside contributors:'
-	Write-Host "  gh api -X PUT orgs/$($Target.Split('/')[0])/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors"
-}
+$Scope = $Target
+if ($RunnerGroup) { $Scope = "$Target, runner group $RunnerGroup" }
+Write-Host "Runner $RunnerName for $Scope with labels self-hosted, Windows, X64, $($Labels -join ', ')."
+Write-Host 'Building public repositories? Require approval for workflows from all outside contributors:'
+Write-Host "  gh api -X PUT orgs/$($Target.Split('/')[0])/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors"
 if ($script:Problems.Count -gt 0)
 {
 	Write-Host ''

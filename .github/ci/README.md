@@ -190,10 +190,16 @@ itself, so that guard alone protects nothing. What does:
 
 - Keep the organization's main build runner away from public repositories. In the Default runner
   group, "Allow public repositories" stays off.
-- Give each public plugin its own runner at the repository level, with `Install-BuildRunner.ps1
-  -Target <org>/<repo>`: its own account, shut out of the other runners' folders, Steam and
-  anything else private on the machine. Private plugins can share one organization-level runner
-  (`-Target <org>`).
+- Run plugin builds on runners of their own, each under its own account, shut out of the other
+  runners' folders, Steam and anything else private on the machine. Either one per repository
+  (`-Target <org>/<repo>`), or one shared by several through a runner group, which the
+  organization must be on the Team plan or above to have:
+  - Public plugins: a group with "Allow public repositories" on and only the public plugin
+    repositories selected, and a runner in it,
+    `-Target <org> -Name plugins-public -RunnerGroup unreal-plugins-public`.
+  - Private plugins: a separate group and runner, `-Name plugins-private -RunnerGroup
+    unreal-plugins-private`, so code from a public pull request never runs under the account that
+    builds private source.
 - Require approval for workflows from all outside contributors, not only first-time ones, and
   read a fork's changes before approving a run:
 
